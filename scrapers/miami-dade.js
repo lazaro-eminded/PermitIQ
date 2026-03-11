@@ -9,37 +9,46 @@ function calcScore(year) {
   return { score: 'OK', label: 'OK — Cold', color: 'green', age };
 }
 
-const BASE = 'https://gisweb.miamidade.gov/arcgis/rest/services';
-
-const ENDPOINTS = [
-  `${BASE}/MD_LandInformation/MapServer`,
-  `${BASE}/LandManagement/MD_LandInformation/MapServer`,
-  `${BASE}/LandManagement/MD_LandMgtViewer/MapServer`,
-  `${BASE}/EnerGov/MD_LandMgtViewer/MapServer`,
-  `${BASE}/Flipper/MD_Flipper/MapServer`,
-];
+const PERMIT_LAYER = 'https://gisweb.miamidade.gov/arcgis/rest/services/MD_LandInformation/MapServer/1/query';
 
 async function scrapeMiamiDade(address) {
   const cleanAddress = address.replace(/,.*$/, '').trim().toUpperCase();
+  const parts = cleanAddress.match(/^(\d+)\s+(.+)$/);
+  const streetNum = parts ? parts[1] : '';
+  const streetName = parts ? parts[2] : cleanAddress;
 
-  // Primero: descubrir qué layers existen en cada endpoint
-  const discovery = [];
-  for (const endpoint of ENDPOINTS) {
+  // Primero: ver qué campos tiene este layer
+  const layerInfo = await axios.get(
+    'https://gisweb.miamidade.gov/arcgis/rest/services/MD_LandInformation/MapServer/1',
+    { params: { f: 'json' }, timeout: 10000 }
+  );
+  const fields = layerInfo.data.fields?.map(f => f.name) || [];
+
+  // Buscar por dirección — probar diferentes campos
+  const queries = [
+    `SITE_ADDRESS LIKE '${cleanAddress}%'`,
+    `ADDRESS LIKE '${cleanAddress}%'`,
+    `STNO = '${streetNum}' AND STNAME LIKE '${streetName}%'`,
+    `STNO = ${streetNum} AND STNAME LIKE '${streetName}%'`,
+    `UPPER(SITE_ADDRESS) LIKE '${cleanAddress}%'`,
+  ];
+
+  const results = [];
+  for (const where of queries) {
     try {
-      const res = await axios.get(endpoint, { params: { f: 'json' }, timeout: 10000 });
-      const data = res.data;
-      if (data.layers) {
-        discovery.push({
-          endpoint,
-          layers: data.layers.map(l => `${l.id}: ${l.name}`),
-        });
-      } else if (data.error) {
-        discovery.push({ endpoint, error: data.error.message });
-      } else {
-        discovery.push({ endpoint, keys: Object.keys(data) });
-      }
+      const res = await axios.get(PERMIT_LAYER, {
+        params: { where, outFields: '*', resultRecordCount: 50, f: 'json' },
+        timeout: 15000
+      });
+      results.push({
+        where,
+        count: res.data.features?.length ?? 0,
+        error: res.data.error?.message,
+        sample: res.data.features?.[0]?.attributes || null,
+      });
+      if (res.data.features?.length > 0) break;
     } catch(e) {
-      discovery.push({ endpoint, error: e.message.slice(0, 80) });
+      results.push({ where, error: e.message.slice(0, 80) });
     }
   }
 
@@ -47,7 +56,7 @@ async function scrapeMiamiDade(address) {
     county: 'miami-dade',
     roofAge: null, score: 'NO_DATA', label: 'SIN DATA', color: 'purple',
     latestRoofYear: null, permits: [], allPermits: [],
-    debug: { cleanAddress, discovery }
+    debug: { cleanAddress, fields, results }
   };
 }
 
