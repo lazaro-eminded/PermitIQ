@@ -1,38 +1,78 @@
 ﻿const axios = require('axios');
 const config = require('../config');
 
-const SOCRATA_URL = 'https://opendata.miamidade.gov/resource/ajuk-cyx7.json';
+const ROOF_CATS = new Set(['0092','0082','0107','0083','0084','0085','0086','0087','0088','0089','0090','0091','0093','0094','0095']);
+const ROOF_KEYWORDS = ['ROOF','SHINGLE','TILE','FLAT','SBS','SINGLE PLY','GRAVEL','METAL ROOF','WOOD SHAKE'];
+
+function isRoof(cat, desc) {
+  if (ROOF_CATS.has(String(cat))) return true;
+  if (desc && ROOF_KEYWORDS.some(k => String(desc).toUpperCase().includes(k))) return true;
+  return false;
+}
+
+function calcScore(year) {
+  if (!year) return { score: 'NO_DATA', label: 'SIN DATA', color: 'purple', age: null };
+  const age = new Date().getFullYear() - year;
+  if (age >= config.ROOF_SCORE.CRITICAL_YEARS) return { score: 'CRITICAL', label: 'CRITICO — Hot Lead', color: 'red', age };
+  if (age >= config.ROOF_SCORE.WARM_YEARS)     return { score: 'WARM', label: 'ATENCION — Warm', color: 'yellow', age };
+  return { score: 'OK', label: 'OK — Cold', color: 'green', age };
+}
+
+// MyHome property search — primero obtenemos el FOLIO por dirección
+const MYHOME_SEARCH = 'https://gisweb.miamidade.gov/arcgis/rest/services/MD_LandInformation/MapServer/24/query';
+// Layer 24 = "Property @ PaGis" del mismo MapServer
 
 async function scrapeMiamiDade(address) {
   const cleanAddress = address.replace(/,.*$/, '').trim().toUpperCase();
+  const parts = cleanAddress.match(/^(\d+)\s+(.+)$/);
+  const streetNum = parts?.[1] || '';
+  const streetRest = parts?.[2] || '';
 
-  // Construir URL manualmente para evitar problemas de encoding
-  const url = `${SOCRATA_URL}?$where=address like '${encodeURIComponent(cleanAddress + '%')}'&$limit=5&$order=issudate DESC`;
+  // Paso 1: buscar FOLIO por dirección en el layer de propiedades
+  const propRes = await axios.get(MYHOME_SEARCH, {
+    params: {
+      where: `ADDRESS LIKE '${cleanAddress}%'`,
+      outFields: 'FOLIO,ADDRESS,OWNER1',
+      resultRecordCount: 5,
+      f: 'json'
+    },
+    timeout: 15000
+  }).catch(e => ({ data: { error: e.message } }));
 
-  // También probar con query directo sin $where
-  const url2 = `${SOCRATA_URL}?address=${encodeURIComponent(cleanAddress)}&$limit=5`;
+  const propFeatures = propRes.data?.features || [];
+  const folio = propFeatures[0]?.attributes?.FOLIO || null;
 
-  const [r1, r2] = await Promise.all([
-    axios.get(url, { headers: { 'Accept': 'application/json' }, timeout: 20000 }).catch(e => ({ data: { error: e.message } })),
-    axios.get(url2, { headers: { 'Accept': 'application/json' }, timeout: 20000 }).catch(e => ({ data: { error: e.message } })),
-  ]);
-
-  const d1 = r1.data;
-  const d2 = r2.data;
+  // Paso 2: si tenemos folio, buscar todos los permisos por FOLIO en el layer de permisos
+  let permitsByFolio = [];
+  if (folio) {
+    const permRes = await axios.get(
+      'https://gisweb.miamidade.gov/arcgis/rest/services/MD_LandInformation/MapServer/1/query',
+      {
+        params: {
+          where: `FOLIO = '${folio}'`,
+          outFields: 'ADDRESS,FOLIO,TYPE,CAT1,DESC1,ISSUDATE,BLDCMPDT,BPSTATUS',
+          resultRecordCount: 200,
+          orderByFields: 'ISSUDATE DESC',
+          f: 'json'
+        },
+        timeout: 15000
+      }
+    ).catch(e => ({ data: { error: e.message } }));
+    permitsByFolio = permRes.data?.features?.map(f => f.attributes) || [];
+  }
 
   return {
     county: 'miami-dade',
     roofAge: null, score: 'NO_DATA', label: 'SIN DATA', color: 'purple',
     latestRoofYear: null, permits: [], allPermits: [],
     debug: {
-      url1_type: typeof d1,
-      url1_isArray: Array.isArray(d1),
-      url1_length: Array.isArray(d1) ? d1.length : null,
-      url1_first: Array.isArray(d1) ? d1[0] : d1,
-      url2_type: typeof d2,
-      url2_isArray: Array.isArray(d2),
-      url2_length: Array.isArray(d2) ? d2.length : null,
-      url2_first: Array.isArray(d2) ? d2[0] : d2,
+      cleanAddress,
+      propError: propRes.data?.error || null,
+      propFound: propFeatures.length,
+      propSample: propFeatures[0]?.attributes || null,
+      folio,
+      permitsByFolioCount: permitsByFolio.length,
+      permitsSample: permitsByFolio.slice(0, 3),
     }
   };
 }
