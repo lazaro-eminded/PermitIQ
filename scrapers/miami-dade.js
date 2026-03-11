@@ -43,14 +43,14 @@ async function scrapeMiamiDade(address) {
   });
 
   // Buscar el folio que mejor coincida con la dirección
-  const addressList = addrRes.data?.Addresses || addrRes.data?.addresses || [];
+  const addressList = addrRes.data?.MinimumPropertyInfos || [];
   let folio = null;
   if (Array.isArray(addressList) && addressList.length > 0) {
     const match = addressList.find(a => {
       const addr = (a.Address || a.address || '').toUpperCase();
       return addr.includes(cleanAddress.split(' ').slice(0,2).join(' '));
     }) || addressList[0];
-    folio = match?.FolioNumber || match?.folioNumber || match?.Folio || match?.folio || null;
+    folio = (match?.Strap || '').replace(/-/g, '') || null;
     // Limpiar folio — quitar guiones
     if (folio) folio = folio.replace(/-/g, '');
   }
@@ -213,3 +213,4 @@ async function scrapeMiamiDade(address) {
 }
 
 module.exports = { scrapeMiamiDade };
+
