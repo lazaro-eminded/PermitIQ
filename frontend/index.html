@@ -72,7 +72,7 @@ async function search() {
       body: JSON.stringify({ address })
     });
     const data = await res.json();
-    renderResult(data, address);
+    renderResult(data, address); document.getElementById("raw-debug").textContent = JSON.stringify(data, null, 2); document.getElementById("raw-debug").textContent = JSON.stringify(data, null, 2);
   } catch(e) {
     card.innerHTML = `<div class="error-msg">❌ Error al consultar: ${e.message}</div>`;
   } finally {
@@ -143,3 +143,7 @@ document.getElementById('addressInput').addEventListener('keypress', e => {
 </script>
 </body>
 </html>
+
+
+
+
