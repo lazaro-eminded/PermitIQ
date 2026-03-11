@@ -9,53 +9,40 @@
   body { font-family: Arial, sans-serif; background: #f0f2f5; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 40px 20px; }
   h1 { font-size: 28px; color: #1a1a2e; margin-bottom: 8px; }
   p.sub { color: #666; margin-bottom: 32px; }
-  .search-box { background: white; border-radius: 12px; padding: 28px; width: 100%; max-width: 600px; box-shadow: 0 2px 12px rgba(0,0,0,.1); }
+  .search-box { background: white; border-radius: 12px; padding: 28px; width: 100%; max-width: 640px; box-shadow: 0 2px 12px rgba(0,0,0,.1); }
   input { width: 100%; padding: 14px 16px; font-size: 16px; border: 2px solid #ddd; border-radius: 8px; margin-bottom: 12px; outline: none; }
   input:focus { border-color: #4f8ef7; }
   button { width: 100%; padding: 14px; font-size: 16px; font-weight: bold; background: #4f8ef7; color: white; border: none; border-radius: 8px; cursor: pointer; }
-  button:hover { background: #3a7ae0; }
   button:disabled { background: #aaa; cursor: not-allowed; }
-  .result { margin-top: 24px; width: 100%; max-width: 600px; }
-  .card { background: white; border-radius: 12px; padding: 24px; box-shadow: 0 2px 12px rgba(0,0,0,.1); }
+  .result { margin-top: 24px; width: 100%; max-width: 640px; }
+  .card { background: white; border-radius: 12px; padding: 24px; box-shadow: 0 2px 12px rgba(0,0,0,.1); margin-bottom: 16px; }
   .badge { display: inline-block; padding: 8px 20px; border-radius: 20px; font-size: 18px; font-weight: bold; color: white; margin-bottom: 16px; }
-  .red    { background: #e53e3e; }
-  .yellow { background: #d69e2e; }
-  .green  { background: #38a169; }
-  .purple { background: #805ad5; }
+  .red { background: #e53e3e; } .yellow { background: #d69e2e; } .green { background: #38a169; } .purple { background: #805ad5; }
   .info-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f0f0f0; font-size: 15px; }
   .info-row:last-child { border-bottom: none; }
-  .label { color: #666; }
-  .value { font-weight: bold; color: #1a1a2e; }
-  .permits-title { font-weight: bold; margin: 16px 0 8px; color: #1a1a2e; }
-  .permit-item { background: #f7f7f7; border-radius: 6px; padding: 8px 12px; margin-bottom: 6px; font-size: 13px; }
+  .label { color: #666; } .value { font-weight: bold; }
+  .debug-box { background: #1a1a2e; color: #00ff88; border-radius: 8px; padding: 16px; font-family: monospace; font-size: 12px; white-space: pre-wrap; word-break: break-all; }
   .error-card { background: #fff5f5; border: 1px solid #feb2b2; border-radius: 12px; padding: 20px; color: #c53030; }
-  .spinner { text-align: center; padding: 32px; color: #666; font-size: 15px; }
+  .spinner { text-align: center; padding: 32px; color: #666; }
 </style>
 </head>
 <body>
-
 <h1>🏗️ PermitIQ</h1>
 <p class="sub">Consulta de permisos de construcción en Florida</p>
-
 <div class="search-box">
   <input id="address" type="text" placeholder="Ej: 2237 NW 58 ST, Miami, FL 33142" />
   <button id="btn" onclick="search()">🔍 BUSCAR PERMISOS</button>
 </div>
-
 <div class="result" id="result"></div>
-
 <script>
 async function search() {
   const address = document.getElementById('address').value.trim();
   if (!address) return alert('Ingresa una dirección');
-
   const btn = document.getElementById('btn');
   const result = document.getElementById('result');
-
   btn.disabled = true;
-  btn.textContent = 'Buscando... (puede tardar 30-60 seg)';
-  result.innerHTML = '<div class="spinner">⏳ Consultando portal de permisos...</div>';
-
+  btn.textContent = 'Buscando... (30-60 seg)';
+  result.innerHTML = '<div class="spinner">⏳ Consultando portal...</div>';
   try {
     const res = await fetch('/api/search', {
       method: 'POST',
@@ -63,47 +50,32 @@ async function search() {
       body: JSON.stringify({ address })
     });
     const json = await res.json();
-
-    if (!res.ok) {
-      result.innerHTML = `<div class="error-card">❌ ${json.error}</div>`;
-      return;
-    }
-
+    if (!res.ok) { result.innerHTML = `<div class="error-card">❌ ${json.error}</div>`; return; }
     const d = json.data;
-    const ageText = d.roofAge !== null ? `${d.roofAge} años` : 'Desconocida';
-    const yearText = d.latestRoofYear || 'Sin datos';
-
-    let permitsHtml = '';
-    if (d.permits && d.permits.length > 0) {
-      permitsHtml = '<div class="permits-title">Permisos de techo encontrados:</div>';
-      d.permits.forEach(p => {
-        permitsHtml += `<div class="permit-item">📋 ${p.type} — ${p.date} — ${p.status}</div>`;
-      });
-    } else {
-      permitsHtml = '<div class="permit-item">No se encontraron permisos de techo</div>';
-    }
-
     result.innerHTML = `
       <div class="card">
         <div class="badge ${d.color}">${d.label}</div>
         <div class="info-row"><span class="label">📍 Dirección</span><span class="value">${address}</span></div>
         <div class="info-row"><span class="label">🗺️ Condado</span><span class="value">${d.county}</span></div>
-        <div class="info-row"><span class="label">🏠 Edad del techo</span><span class="value">${ageText}</span></div>
-        <div class="info-row"><span class="label">📅 Último permiso techo</span><span class="value">${yearText}</span></div>
-        ${permitsHtml}
+        <div class="info-row"><span class="label">🏠 Edad del techo</span><span class="value">${d.roofAge !== null ? d.roofAge + ' años' : 'Desconocida'}</span></div>
+        <div class="info-row"><span class="label">📅 Último permiso</span><span class="value">${d.latestRoofYear || 'Sin datos'}</span></div>
+      </div>
+      <div class="card">
+        <strong>🔍 Debug — Respuesta del portal:</strong>
+        <div class="debug-box" style="margin-top:12px">${JSON.stringify(d.debug, null, 2)}</div>
+      </div>
+      <div class="card">
+        <strong>📋 Todas las filas extraídas (${d.allPermits?.length || 0}):</strong>
+        <div class="debug-box" style="margin-top:12px">${(d.allPermits || []).join('\n')}</div>
       </div>`;
-
   } catch (e) {
-    result.innerHTML = `<div class="error-card">❌ Error de conexión: ${e.message}</div>`;
+    result.innerHTML = `<div class="error-card">❌ Error: ${e.message}</div>`;
   } finally {
     btn.disabled = false;
     btn.textContent = '🔍 BUSCAR PERMISOS';
   }
 }
-
-document.getElementById('address').addEventListener('keypress', e => {
-  if (e.key === 'Enter') search();
-});
+document.getElementById('address').addEventListener('keypress', e => { if (e.key === 'Enter') search(); });
 </script>
 </body>
 </html>
