@@ -1,6 +1,17 @@
 ﻿const axios = require('axios');
 const config = require('../config');
 
+const ROOF_CATS = ['0092','0082','0107','0083','0084','0085','0086','0087','0088','0089','0090','0091'];
+// 0092=Flat/SBS, 0107=Tile, 0082=Windows (not roof but let's see), 0083-0091=roof types
+
+const ROOF_DESCS = ['ROOF','SHINGLE','TILE','FLAT','SBS','SINGLE PLY','GRAVEL'];
+
+function isRoof(cat, desc) {
+  if (ROOF_CATS.includes(cat)) return true;
+  if (desc && ROOF_DESCS.some(r => desc.toUpperCase().includes(r))) return true;
+  return false;
+}
+
 function calcScore(year) {
   if (!year) return { score: 'NO_DATA', label: 'SIN DATA', color: 'purple', age: null };
   const age = new Date().getFullYear() - year;
@@ -9,45 +20,45 @@ function calcScore(year) {
   return { score: 'OK', label: 'OK — Cold', color: 'green', age };
 }
 
-const PERMIT_LAYER = 'https://gisweb.miamidade.gov/arcgis/rest/services/MD_LandInformation/MapServer/1/query';
+// Socrata OpenData — dataset histórico completo de Miami-Dade
+const SOCRATA_URL = 'https://opendata.miamidade.gov/resource/ajuk-cyx7.json';
 
 async function scrapeMiamiDade(address) {
   const cleanAddress = address.replace(/,.*$/, '').trim().toUpperCase();
   const parts = cleanAddress.match(/^(\d+)\s+(.+)$/);
-  const streetNum = parts ? parts[1] : '';
+  const streetNum = parts?.[1] || '';
+  const streetRest = parts?.[2] || '';
 
-  // Ver 5 registros al azar para entender el formato del campo ADDRESS
-  const sampleRes = await axios.get(PERMIT_LAYER, {
-    params: {
-      where: `ADDRESS LIKE '${streetNum}%'`,
-      outFields: 'ADDRESS,TYPE,CAT1,DESC1,ISSUDATE,BLDCMPDT,BPSTATUS',
-      resultRecordCount: 5,
-      f: 'json'
-    },
-    timeout: 15000
-  });
+  try {
+    const res = await axios.get(SOCRATA_URL, {
+      params: {
+        $where: `address like '${cleanAddress}%'`,
+        $limit: 100,
+        $order: 'issudate DESC',
+      },
+      timeout: 20000
+    });
 
-  // También probar con solo el número de calle para ver formato
-  const sampleRes2 = await axios.get(PERMIT_LAYER, {
-    params: {
-      where: `OBJECTID < 10`,
-      outFields: 'ADDRESS,TYPE,CAT1,DESC1,ISSUDATE,BLDCMPDT,FOLIO',
-      resultRecordCount: 5,
-      f: 'json'
-    },
-    timeout: 15000
-  });
+    const data = res.data;
 
-  return {
-    county: 'miami-dade',
-    roofAge: null, score: 'NO_DATA', label: 'SIN DATA', color: 'purple',
-    latestRoofYear: null, permits: [], allPermits: [],
-    debug: {
-      cleanAddress,
-      byStreetNum: sampleRes.data.features?.map(f => f.attributes) || sampleRes.data.error,
-      randomSample: sampleRes2.data.features?.map(f => f.attributes) || sampleRes2.data.error,
-    }
-  };
+    return {
+      county: 'miami-dade',
+      roofAge: null, score: 'NO_DATA', label: 'SIN DATA', color: 'purple',
+      debug: {
+        cleanAddress,
+        socrataCount: data.length,
+        socrataError: data.error || null,
+        sample: data.slice(0, 3),
+        allFields: data[0] ? Object.keys(data[0]) : []
+      }
+    };
+  } catch(e) {
+    return {
+      county: 'miami-dade',
+      roofAge: null, score: 'NO_DATA', label: 'SIN DATA', color: 'purple',
+      debug: { cleanAddress, error: e.message }
+    };
+  }
 }
 
 module.exports = { scrapeMiamiDade };
