@@ -1,81 +1,145 @@
 ﻿<!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PermitIQ</title>
-<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: Arial, sans-serif; background: #f0f2f5; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 40px 20px; }
-  h1 { font-size: 28px; color: #1a1a2e; margin-bottom: 8px; }
-  p.sub { color: #666; margin-bottom: 32px; }
-  .search-box { background: white; border-radius: 12px; padding: 28px; width: 100%; max-width: 640px; box-shadow: 0 2px 12px rgba(0,0,0,.1); }
-  input { width: 100%; padding: 14px 16px; font-size: 16px; border: 2px solid #ddd; border-radius: 8px; margin-bottom: 12px; outline: none; }
-  input:focus { border-color: #4f8ef7; }
-  button { width: 100%; padding: 14px; font-size: 16px; font-weight: bold; background: #4f8ef7; color: white; border: none; border-radius: 8px; cursor: pointer; }
-  button:disabled { background: #aaa; cursor: not-allowed; }
-  .result { margin-top: 24px; width: 100%; max-width: 640px; }
-  .card { background: white; border-radius: 12px; padding: 24px; box-shadow: 0 2px 12px rgba(0,0,0,.1); margin-bottom: 16px; }
-  .badge { display: inline-block; padding: 8px 20px; border-radius: 20px; font-size: 18px; font-weight: bold; color: white; margin-bottom: 16px; }
-  .red { background: #e53e3e; } .yellow { background: #d69e2e; } .green { background: #38a169; } .purple { background: #805ad5; }
-  .info-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f0f0f0; font-size: 15px; }
-  .info-row:last-child { border-bottom: none; }
-  .label { color: #666; } .value { font-weight: bold; }
-  .debug-box { background: #1a1a2e; color: #00ff88; border-radius: 8px; padding: 16px; font-family: monospace; font-size: 12px; white-space: pre-wrap; word-break: break-all; }
-  .error-card { background: #fff5f5; border: 1px solid #feb2b2; border-radius: 12px; padding: 20px; color: #c53030; }
-  .spinner { text-align: center; padding: 32px; color: #666; }
-</style>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>PermitIQ</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f2f5; min-height: 100vh; padding: 20px; }
+    .container { max-width: 680px; margin: 0 auto; }
+    h1 { text-align: center; font-size: 1.8rem; color: #1a1a2e; margin-bottom: 4px; }
+    .subtitle { text-align: center; color: #666; font-size: 0.9rem; margin-bottom: 24px; }
+    .card { background: white; border-radius: 16px; padding: 24px; margin-bottom: 16px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+    input { width: 100%; padding: 14px 16px; border: 2px solid #e0e0e0; border-radius: 10px; font-size: 1rem; outline: none; transition: border-color 0.2s; }
+    input:focus { border-color: #4361ee; }
+    button { width: 100%; padding: 14px; background: #4361ee; color: white; border: none; border-radius: 10px; font-size: 1rem; font-weight: 600; cursor: pointer; margin-top: 12px; transition: background 0.2s; }
+    button:hover { background: #3451d1; }
+    button:disabled { background: #a0aec0; cursor: not-allowed; }
+    .badge { display: inline-block; padding: 6px 16px; border-radius: 20px; font-weight: 700; font-size: 0.95rem; color: white; margin-bottom: 16px; }
+    .badge.red    { background: #e63946; }
+    .badge.yellow { background: #f4a261; }
+    .badge.green  { background: #2a9d8f; }
+    .badge.purple { background: #7b2d8b; }
+    .info-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #f0f0f0; font-size: 0.95rem; }
+    .info-row:last-child { border-bottom: none; }
+    .info-label { color: #666; }
+    .info-value { font-weight: 600; color: #1a1a2e; }
+    .source-note { font-size: 0.82rem; color: #888; margin-top: 12px; font-style: italic; }
+    .permits-section h3 { font-size: 1rem; font-weight: 700; margin-bottom: 12px; color: #1a1a2e; }
+    .permit-row { background: #f8f9fa; border-radius: 8px; padding: 10px 14px; margin-bottom: 8px; font-size: 0.88rem; }
+    .permit-row .permit-desc { font-weight: 600; color: #1a1a2e; }
+    .permit-row .permit-meta { color: #666; margin-top: 2px; }
+    .permit-roof { border-left: 3px solid #4361ee; }
+    .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; margin-left: 6px; }
+    .tag.roof { background: #e8f0fe; color: #4361ee; }
+    .tag.status-F { background: #e8f5e9; color: #2e7d32; }
+    .tag.status-E { background: #fff3e0; color: #e65100; }
+    .hidden { display: none; }
+    .spinner { text-align: center; padding: 20px; color: #666; }
+    .error-msg { background: #fff5f5; border: 1px solid #feb2b2; border-radius: 8px; padding: 12px 16px; color: #c53030; font-size: 0.9rem; }
+  </style>
 </head>
 <body>
-<h1>🏗️ PermitIQ</h1>
-<p class="sub">Consulta de permisos de construcción en Florida</p>
-<div class="search-box">
-  <input id="address" type="text" placeholder="Ej: 2237 NW 58 ST, Miami, FL 33142" />
-  <button id="btn" onclick="search()">🔍 BUSCAR PERMISOS</button>
+<div class="container">
+  <h1>🔧 PermitIQ</h1>
+  <p class="subtitle">Consulta de permisos de construcción en Florida</p>
+
+  <div class="card">
+    <input id="addressInput" type="text" placeholder="Ej: 14930 NE 14 AVE, Miami, FL 33142" />
+    <button id="searchBtn" onclick="search()">🔍 BUSCAR PERMISOS</button>
+  </div>
+
+  <div id="resultCard" class="card hidden"></div>
 </div>
-<div class="result" id="result"></div>
+
 <script>
 async function search() {
-  const address = document.getElementById('address').value.trim();
-  if (!address) return alert('Ingresa una dirección');
-  const btn = document.getElementById('btn');
-  const result = document.getElementById('result');
+  const address = document.getElementById('addressInput').value.trim();
+  if (!address) return;
+
+  const btn = document.getElementById('searchBtn');
+  const card = document.getElementById('resultCard');
   btn.disabled = true;
-  btn.textContent = 'Buscando... (30-60 seg)';
-  result.innerHTML = '<div class="spinner">⏳ Consultando portal...</div>';
+  btn.textContent = '⏳ Buscando...';
+  card.className = 'card';
+  card.innerHTML = '<div class="spinner">Consultando permisos...</div>';
+
   try {
     const res = await fetch('/api/search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ address })
     });
-    const json = await res.json();
-    if (!res.ok) { result.innerHTML = `<div class="error-card">❌ ${json.error}</div>`; return; }
-    const d = json.data;
-    result.innerHTML = `
-      <div class="card">
-        <div class="badge ${d.color}">${d.label}</div>
-        <div class="info-row"><span class="label">📍 Dirección</span><span class="value">${address}</span></div>
-        <div class="info-row"><span class="label">🗺️ Condado</span><span class="value">${d.county}</span></div>
-        <div class="info-row"><span class="label">🏠 Edad del techo</span><span class="value">${d.roofAge !== null ? d.roofAge + ' años' : 'Desconocida'}</span></div>
-        <div class="info-row"><span class="label">📅 Último permiso</span><span class="value">${d.latestRoofYear || 'Sin datos'}</span></div>
-      </div>
-      <div class="card">
-        <strong>🔍 Debug — Respuesta del portal:</strong>
-        <div class="debug-box" style="margin-top:12px">${JSON.stringify(d.debug, null, 2)}</div>
-      </div>
-      <div class="card">
-        <strong>📋 Todas las filas extraídas (${d.allPermits?.length || 0}):</strong>
-        <div class="debug-box" style="margin-top:12px">${(d.allPermits || []).join('\n')}</div>
-      </div>`;
-  } catch (e) {
-    result.innerHTML = `<div class="error-card">❌ Error: ${e.message}</div>`;
+    const data = await res.json();
+    renderResult(data, address);
+  } catch(e) {
+    card.innerHTML = `<div class="error-msg">❌ Error al consultar: ${e.message}</div>`;
   } finally {
     btn.disabled = false;
     btn.textContent = '🔍 BUSCAR PERMISOS';
   }
 }
-document.getElementById('address').addEventListener('keypress', e => { if (e.key === 'Enter') search(); });
+
+function renderResult(data, address) {
+  const card = document.getElementById('resultCard');
+  const colorMap = { red: 'red', yellow: 'yellow', green: 'green', purple: 'purple' };
+  const emojiMap = { red: '🔴', yellow: '🟡', green: '🟢', purple: '🟣' };
+  const color = colorMap[data.color] || 'purple';
+  const emoji = emojiMap[data.color] || '🟣';
+
+  const roofAgeDisplay = data.roofAge != null ? `${data.roofAge} años` : 'Desconocida';
+  const lastPermitDisplay = data.latestRoofYear || (data.allPermits?.length ? 'Sin permiso de techo' : 'Sin datos');
+
+  let permitsHtml = '';
+  if (data.allPermits && data.allPermits.length > 0) {
+    const roofOnly = data.allPermits.filter(p => p.isRoof);
+    const others   = data.allPermits.filter(p => !p.isRoof);
+    const allSorted = [...roofOnly, ...others];
+
+    permitsHtml = `
+      <div class="permits-section" style="margin-top:20px">
+        <h3>📋 Permisos encontrados (${data.allPermits.length})</h3>
+        ${allSorted.map(p => `
+          <div class="permit-row ${p.isRoof ? 'permit-roof' : ''}">
+            <div class="permit-desc">
+              ${p.description || p.type}
+              ${p.isRoof ? '<span class="tag roof">TECHO</span>' : ''}
+              <span class="tag status-${p.status}">${p.status === 'F' ? 'Finalizado' : p.status === 'E' ? 'Expirado' : p.status}</span>
+            </div>
+            <div class="permit-meta">${p.date} · Tipo: ${p.type}</div>
+          </div>
+        `).join('')}
+      </div>`;
+  }
+
+  card.innerHTML = `
+    <span class="badge ${color}">${data.label || 'SIN DATA'}</span>
+    <div class="info-row">
+      <span class="info-label">📍 Dirección</span>
+      <span class="info-value">${address}</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">🗺️ Condado</span>
+      <span class="info-value">${data.county}</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">🏠 Edad del techo</span>
+      <span class="info-value">${roofAgeDisplay}</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">📅 Último permiso techo</span>
+      <span class="info-value">${lastPermitDisplay}</span>
+    </div>
+    ${data.folio ? `<div class="info-row"><span class="info-label">🔑 Folio</span><span class="info-value">${data.folio}</span></div>` : ''}
+    ${data.sourceNote ? `<p class="source-note">ℹ️ ${data.sourceNote}</p>` : ''}
+    ${permitsHtml}
+  `;
+}
+
+document.getElementById('addressInput').addEventListener('keypress', e => {
+  if (e.key === 'Enter') search();
+});
 </script>
 </body>
 </html>
