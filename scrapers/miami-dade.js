@@ -1,4 +1,4 @@
-﻿const { chromium } = require('playwright');
+﻿const axios = require('axios');
 const config = require('../config');
 
 function calcScore(year) {
@@ -9,141 +9,103 @@ function calcScore(year) {
   return { score: 'OK', label: 'OK — Cold', color: 'green', age };
 }
 
+// URLs del ArcGIS REST API de Miami-Dade (probar en orden)
+const ARCGIS_ENDPOINTS = [
+  'https://gisweb.miamidade.gov/arcgis/rest/services/RER/BuildingPermit/MapServer/0/query',
+  'https://gisweb.miamidade.gov/arcgis/rest/services/RER/MD_BuildingPermit/MapServer/0/query',
+  'https://gisweb.miamidade.gov/arcgis/rest/services/LandManagement/BuildingPermit/MapServer/0/query',
+  'https://services.arcgis.com/8Pc9XBTAsYuxx9Ny/arcgis/rest/services/BuildingPermit/FeatureServer/0/query',
+];
+
+async function queryArcGIS(endpoint, addressLike) {
+  const params = {
+    where: `SITE_ADDRESS LIKE '${addressLike}%'`,
+    outFields: '*',
+    orderByFields: 'ISSUE_DATE DESC',
+    resultRecordCount: 50,
+    f: 'json',
+  };
+  const res = await axios.get(endpoint, { params, timeout: 15000 });
+  if (res.data && res.data.features) return res.data.features;
+  return null;
+}
+
 async function scrapeMiamiDade(address) {
-  const browser = await chromium.launch({
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-  });
-  const context = await browser.newContext({
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36'
-  });
-  const page = await context.newPage();
+  const cleanAddress = address.replace(/,.*$/, '').trim().toUpperCase();
+  // Usar solo numero y calle para el LIKE
+  const addressLike = cleanAddress.replace(/\s+/g, ' ').split(' ').slice(0, 3).join(' ');
 
-  try {
-    const cleanAddress = address.replace(/,.*$/, '').trim().toUpperCase();
+  let features = null;
+  let workingEndpoint = null;
+  const errors = [];
 
-    await page.goto('https://www.miamidade.gov/Apps/RER/ePermittingMenu/Home/Permits', {
-      waitUntil: 'domcontentloaded', timeout: 30000
-    });
-    await page.waitForTimeout(3000);
-
-    // Forzar habilitacion del boton + setear valores + submit via JS puro
-    const submitted = await page.evaluate((addr) => {
-      try {
-        // Setear radio
-        const radio = document.querySelector('input[name="permit"][value="addr"]');
-        if (!radio) return { ok: false, error: 'radio not found' };
-        radio.checked = true;
-
-        // Setear input
-        const input = document.querySelector('input[name="inKey"]');
-        if (!input) return { ok: false, error: 'input not found' };
-        input.value = addr;
-        input.removeAttribute('disabled');
-        input.removeAttribute('readonly');
-
-        // Forzar habilitar el boton submit
-        const btn = document.querySelector('input[type="submit"]');
-        if (btn) {
-          btn.disabled = false;
-          btn.removeAttribute('disabled');
-        }
-
-        // Submittear el form directamente
-        const form = document.querySelector('form');
-        if (!form) return { ok: false, error: 'form not found' };
-
-        // Agregar hidden input con el valor del radio (por si el form no lo toma)
-        const hidden = document.createElement('input');
-        hidden.type = 'hidden';
-        hidden.name = 'permit';
-        hidden.value = 'addr';
-        form.appendChild(hidden);
-
-        form.submit();
-        return { ok: true };
-      } catch(e) {
-        return { ok: false, error: e.message };
+  // Probar cada endpoint hasta que uno funcione
+  for (const endpoint of ARCGIS_ENDPOINTS) {
+    try {
+      features = await queryArcGIS(endpoint, addressLike);
+      if (features !== null) {
+        workingEndpoint = endpoint;
+        break;
       }
-    }, cleanAddress);
+    } catch(e) {
+      errors.push({ endpoint, error: e.message });
+    }
+  }
 
-    // Esperar a que cargue la nueva pagina
-    await page.waitForLoadState('domcontentloaded', { timeout: 20000 });
-    await page.waitForTimeout(3000);
+  // Buscar permisos de techo en los resultados
+  let latestYear = null;
+  const roofPermits = [];
 
-    const currentUrl = page.url();
-    const pageText = await page.evaluate(() => document.body.innerText);
-    const pageSnippet = pageText.replace(/\s+/g, ' ').trim().slice(0, 1500);
+  if (features && features.length > 0) {
+    for (const f of features) {
+      const attrs = f.attributes || {};
+      const permitType = (attrs.PERMIT_TYPE || attrs.TYPE || attrs.WORK_TYPE || '').toString();
+      const desc = (attrs.DESCRIPTION || attrs.DESC_ || attrs.WORK_DESC || '').toString();
+      const isRoof = /roof|roofing/i.test(permitType) || /roof|roofing/i.test(desc);
 
-    // Extraer filas
-    const rows = await page.evaluate(() =>
-      Array.from(document.querySelectorAll('tr'))
-        .map(tr => tr.innerText.replace(/\s+/g, ' ').trim())
-        .filter(t => t.length > 3)
-    );
-
-    // Extraer todos los links
-    const allLinks = await page.evaluate(() =>
-      Array.from(document.querySelectorAll('a'))
-        .map(a => ({ text: a.innerText.trim(), href: a.href }))
-        .filter(a => a.text.length > 1)
-    );
-
-    // Filtrar links de permisos individuales
-    const permitLinks = allLinks.filter(l =>
-      /ePermittingMenu.*Inquiry|ePermittingMenu.*Process/i.test(l.href) &&
-      /\d/.test(l.text)
-    );
-
-    // Navegar a permisos de techo
-    let latestYear = null;
-    const roofPermits = [];
-
-    for (const link of permitLinks.slice(0, 20)) {
-      try {
-        await page.goto(link.href, { waitUntil: 'domcontentloaded', timeout: 15000 });
-        await page.waitForTimeout(500);
-        const text = await page.evaluate(() => document.body.innerText);
-        if (/roof|roofing/i.test(text)) {
-          const years = text.match(/\b(19|20)\d{2}\b/g) || [];
-          for (const y of years) {
-            const yr = parseInt(y);
+      if (isRoof) {
+        // Extraer año de la fecha de emisión
+        const dateFields = ['ISSUE_DATE', 'ISSUED_DATE', 'DATE_ISSUED', 'PERMIT_DATE'];
+        for (const field of dateFields) {
+          if (attrs[field]) {
+            // ArcGIS timestamps son milisegundos desde epoch
+            const ts = parseInt(attrs[field]);
+            const yr = ts > 9999999999 ? new Date(ts).getFullYear() : new Date(ts * 1000).getFullYear();
             if (yr >= 1990 && yr <= new Date().getFullYear()) {
               if (!latestYear || yr > latestYear) latestYear = yr;
+              roofPermits.push({
+                raw: `${permitType} - ${desc}`.trim(),
+                type: permitType || 'ROOFING',
+                date: String(yr),
+              });
+              break;
             }
           }
-          roofPermits.push({ text: link.text, snippet: text.slice(0, 300) });
         }
-      } catch(e) {}
-    }
-
-    const scoring = calcScore(latestYear);
-
-    return {
-      county: 'miami-dade',
-      roofAge: scoring.age,
-      score: scoring.score,
-      label: scoring.label,
-      color: scoring.color,
-      latestRoofYear: latestYear,
-      permits: roofPermits.map(p => ({ raw: p.text, type: 'ROOFING', date: String(latestYear || '') })),
-      allPermits: rows,
-      debug: {
-        submitted,
-        currentUrl,
-        totalRows: rows.length,
-        totalLinks: allLinks.length,
-        permitLinksFound: permitLinks.length,
-        permitLinks: permitLinks.slice(0, 10),
-        allLinksRaw: allLinks.filter(l => l.href.includes('RER')).slice(0, 10),
-        roofPermits: roofPermits.length,
-        pageSnippet,
       }
-    };
-
-  } finally {
-    await browser.close();
+    }
   }
+
+  const scoring = calcScore(latestYear);
+
+  return {
+    county: 'miami-dade',
+    roofAge: scoring.age,
+    score: scoring.score,
+    label: scoring.label,
+    color: scoring.color,
+    latestRoofYear: latestYear,
+    permits: roofPermits,
+    allPermits: features ? features.slice(0, 10).map(f => JSON.stringify(f.attributes).slice(0, 100)) : [],
+    debug: {
+      addressLike,
+      workingEndpoint,
+      totalFeatures: features ? features.length : 0,
+      roofFeatures: roofPermits.length,
+      errors,
+      sampleFeature: features && features[0] ? features[0].attributes : null,
+    }
+  };
 }
 
 module.exports = { scrapeMiamiDade };
