@@ -1,70 +1,108 @@
 ﻿const axios = require('axios');
 const config = require('../config');
 
+const ROOF_CATS = new Set(['0092','0082','0107','0083','0084','0085','0086','0087','0088','0089','0090','0091','0093','0094','0095']);
+const ROOF_KEYWORDS = ['ROOF','SHINGLE','TILE','FLAT','SBS','SINGLE PLY','GRAVEL','METAL ROOF'];
+
+function isRoof(cat, desc) {
+  if (ROOF_CATS.has(String(cat).trim())) return true;
+  if (desc && ROOF_KEYWORDS.some(k => String(desc).toUpperCase().includes(k))) return true;
+  return false;
+}
+
+function calcScore(year) {
+  if (!year) return { score: 'NO_DATA', label: 'SIN DATA', color: 'purple', age: null };
+  const age = new Date().getFullYear() - year;
+  if (age >= config.ROOF_SCORE.CRITICAL_YEARS) return { score: 'CRITICAL', label: 'CRITICO — Hot Lead', color: 'red', age };
+  if (age >= config.ROOF_SCORE.WARM_YEARS)     return { score: 'WARM', label: 'ATENCION — Warm', color: 'yellow', age };
+  return { score: 'OK', label: 'OK — Cold', color: 'green', age };
+}
+
+const PA_API = 'https://www.miamidade.gov/Apps/PA/PApublicServiceProxy/PaServicesProxy.ashx';
+const PERMIT_LAYER = 'https://gisweb.miamidade.gov/arcgis/rest/services/MD_LandInformation/MapServer/1/query';
+
 async function scrapeMiamiDade(address) {
   const cleanAddress = address.replace(/,.*$/, '').trim().toUpperCase();
-  const parts = cleanAddress.match(/^(\d+)\s+(.+)$/);
-  const streetNum = parts?.[1] || '';
 
-  // Opción 1: MapServer Find — busca texto en layers específicos
-  const findRes = await axios.get(
-    'https://gisweb.miamidade.gov/arcgis/rest/services/MD_LandInformation/MapServer/find',
-    {
+  // Paso 1: Property Appraiser API — obtener FOLIO y año de construcción
+  const paRes = await axios.get(PA_API, {
+    params: {
+      Operation: 'GetPropertySearchByAddress',
+      clientAppName: 'PropertySearch',
+      enPoint: 'Address',
+      myAddress: cleanAddress,
+      myUnit: ''
+    },
+    headers: { 'Accept': 'application/json', 'Referer': 'https://www.miamidade.gov/Apps/PA/propertysearch/' },
+    timeout: 20000
+  }).catch(e => ({ data: { error: e.message } }));
+
+  const paData = paRes.data;
+  const paInfo = Array.isArray(paData?.MinimumPropertyInfos?.PropertyInfo)
+    ? paData.MinimumPropertyInfos.PropertyInfo[0]
+    : paData?.MinimumPropertyInfos?.PropertyInfo || null;
+
+  const folio = paInfo?.Strap?.replace(/-/g, '') || null;
+  const yearBuilt = paInfo?.YearBuilt ? parseInt(paInfo.YearBuilt) : null;
+
+  // Paso 2: permisos recientes por FOLIO (últimos 3 años en ArcGIS)
+  let recentPermits = [];
+  if (folio) {
+    const permRes = await axios.get(PERMIT_LAYER, {
       params: {
-        searchText: cleanAddress,
-        layers: '1,24,26',   // BuildingPermit, Property, Parcels
-        searchFields: 'ADDRESS',
-        returnGeometry: false,
+        where: `FOLIO = '${folio}'`,
+        outFields: 'ADDRESS,FOLIO,TYPE,CAT1,DESC1,ISSUDATE,BPSTATUS',
+        resultRecordCount: 100,
+        orderByFields: 'ISSUDATE DESC',
         f: 'json'
       },
       timeout: 15000
-    }
-  ).catch(e => ({ data: { error: e.message } }));
+    }).catch(e => ({ data: { error: e.message } }));
+    recentPermits = permRes.data?.features?.map(f => f.attributes) || [];
+  }
 
-  // Opción 2: Address Search API de Miami-Dade (usada por MyHome)
-  const addrRes = await axios.get(
-    'https://gisweb.miamidade.gov/addresssearch/addresssearch.aspx',
-    {
-      params: { m: 'findaddress', addr: cleanAddress, f: 'json' },
-      timeout: 15000
-    }
-  ).catch(e => ({ data: { error: e.message } }));
+  // Paso 3: calcular roof year
+  const roofPermits = recentPermits.filter(p => isRoof(p.CAT1, p.DESC1));
+  let latestRoofYear = null;
+  if (roofPermits.length > 0) {
+    const ts = roofPermits[0].ISSUDATE;
+    latestRoofYear = ts ? new Date(ts).getFullYear() : null;
+  }
 
-  // Opción 3: el endpoint que usa el portal ePermitting internamente
-  const epRes = await axios.get(
-    'https://gisweb.miamidade.gov/arcgis/rest/services/MD_LandInformation/MapServer/1/query',
-    {
-      params: {
-        where: `ADDRESS LIKE '${streetNum} NW%' OR ADDRESS LIKE '${streetNum} NE%' OR ADDRESS LIKE '${streetNum} SW%' OR ADDRESS LIKE '${streetNum} SE%'`,
-        outFields: 'ADDRESS,FOLIO,TYPE,CAT1,DESC1,ISSUDATE',
-        resultRecordCount: 10,
-        f: 'json'
-      },
-      timeout: 15000
-    }
-  ).catch(e => ({ data: { error: e.message } }));
+  // Si no hay permiso de techo reciente, usar year_built como base
+  const roofYear = latestRoofYear || yearBuilt;
+  const scoreData = calcScore(roofYear);
+
+  const allPermits = recentPermits.map(p => ({
+    date: p.ISSUDATE ? new Date(p.ISSUDATE).toLocaleDateString('en-US') : 'N/A',
+    type: p.TYPE,
+    description: (p.DESC1 || '').trim(),
+    status: p.BPSTATUS,
+    isRoof: isRoof(p.CAT1, p.DESC1)
+  }));
 
   return {
     county: 'miami-dade',
-    roofAge: null, score: 'NO_DATA', label: 'SIN DATA', color: 'purple',
-    latestRoofYear: null, permits: [], allPermits: [],
+    address: cleanAddress,
+    folio,
+    yearBuilt,
+    latestRoofYear,
+    roofYear,
+    roofAge: scoreData.age,
+    score: scoreData.score,
+    label: scoreData.label,
+    color: scoreData.color,
+    sourceNote: latestRoofYear ? 'Permiso de techo reciente encontrado' : yearBuilt ? `Sin permiso reciente — usando año construcción (${yearBuilt})` : 'Sin datos disponibles',
+    permits: allPermits.filter(p => p.isRoof),
+    allPermits,
     debug: {
-      cleanAddress,
-      find: {
-        error: findRes.data?.error || null,
-        count: findRes.data?.results?.length ?? 0,
-        sample: findRes.data?.results?.slice(0,2) || null,
-      },
-      addrSearch: {
-        type: typeof addrRes.data,
-        isArray: Array.isArray(addrRes.data),
-        snippet: JSON.stringify(addrRes.data).slice(0, 200),
-      },
-      epQuery: {
-        error: epRes.data?.error || null,
-        count: epRes.data?.features?.length ?? 0,
-        sample: epRes.data?.features?.slice(0,2)?.map(f=>f.attributes) || null,
-      }
+      paRawType: typeof paData,
+      paError: paData?.error || null,
+      paInfo,
+      folio,
+      yearBuilt,
+      recentPermitsCount: recentPermits.length,
+      roofPermitsCount: roofPermits.length,
     }
   };
 }
