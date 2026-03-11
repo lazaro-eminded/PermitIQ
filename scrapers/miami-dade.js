@@ -1,6 +1,4 @@
 ﻿const { chromium } = require('playwright');
-const axios = require('axios');
-const cheerio = require('cheerio');
 const config = require('../config');
 
 function calcScore(year) {
@@ -12,65 +10,84 @@ function calcScore(year) {
 }
 
 async function scrapeMiamiDade(address) {
-  const cleanAddress = address.replace(/,.*$/, '').trim().toUpperCase();
-
-  // POST directo al portal — mismo request que hace el browser
-  const formUrl = 'https://www.miamidade.gov/Apps/RER/ePermittingMenu/Home/Process';
-  const params = new URLSearchParams();
-  params.append('permit', 'addr');
-  params.append('inKey', cleanAddress);
-
-  const response = await axios.post(formUrl, params.toString(), {
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Referer': 'https://www.miamidade.gov/Apps/RER/ePermittingMenu/Home/Permits',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'Origin': 'https://www.miamidade.gov',
-    },
-    maxRedirects: 5,
-    timeout: 30000,
+  const browser = await chromium.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
   });
-
-  const $ = cheerio.load(response.data);
-  const pageText = $.text();
-  const pageSnippet = pageText.replace(/\s+/g, ' ').trim().slice(0, 1000);
-
-  // Extraer todas las filas de la tabla
-  const rows = [];
-  $('tr').each((i, tr) => {
-    const text = $(tr).text().replace(/\s+/g, ' ').trim();
-    if (text.length > 3) rows.push(text);
+  const context = await browser.newContext({
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36'
   });
+  const page = await context.newPage();
 
-  // Extraer links de permisos
-  const links = [];
-  $('a').each((i, a) => {
-    const text = $(a).text().trim();
-    const href = $(a).attr('href') || '';
-    if (text.length > 2 && href) {
-      const fullHref = href.startsWith('http') ? href : `https://www.miamidade.gov${href}`;
-      links.push({ text, href: fullHref });
-    }
-  });
+  try {
+    const cleanAddress = address.replace(/,.*$/, '').trim().toUpperCase();
 
-  // Filtrar links que parecen numeros de permiso
-  const permitLinks = links.filter(l =>
-    /\d{2}-[A-Z]{2}|\d{6,}|permit/i.test(l.text) ||
-    /ePermittingMenu.*Process|permit/i.test(l.href)
-  ).filter(l => !/(Home|Plans|Menu|BLDG|Type|Format|About|Privacy|Disclaimer|Webmaster|economy|miamidade\.gov\/$)/i.test(l.text));
-
-  // Navegar con Playwright a cada permiso individual
-  let latestYear = null;
-  const roofPermits = [];
-
-  if (permitLinks.length > 0) {
-    const browser = await chromium.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+    // Cargar la pagina del form para obtener cookies de sesion
+    await page.goto('https://www.miamidade.gov/Apps/RER/ePermittingMenu/Home/Permits', {
+      waitUntil: 'domcontentloaded', timeout: 30000
     });
-    const page = await browser.newPage();
+    await page.waitForTimeout(1000);
 
-    for (const link of permitLinks.slice(0, 15)) {
+    // Verificar que el form existe
+    const formExists = await page.$('form');
+    if (!formExists) throw new Error('No se encontró el formulario en la página');
+
+    // Setear radio y campo via evaluate
+    await page.evaluate((addr) => {
+      const radio = document.querySelector('input[name="permit"][value="addr"]');
+      const input = document.querySelector('input[name="inKey"]');
+      if (radio) {
+        radio.checked = true;
+        radio.click();
+      }
+      if (input) {
+        input.value = addr;
+        input.focus();
+      }
+    }, cleanAddress);
+
+    await page.waitForTimeout(500);
+
+    // Click en el boton Submit y esperar navegacion
+    const [response] = await Promise.all([
+      page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }),
+      page.evaluate(() => {
+        const submitBtn = document.querySelector('input[type="submit"]');
+        if (submitBtn) submitBtn.click();
+        else document.querySelector('form').submit();
+      })
+    ]);
+
+    await page.waitForTimeout(2000);
+
+    const currentUrl = page.url();
+    const pageText = await page.evaluate(() => document.body.innerText);
+    const pageSnippet = pageText.replace(/\s+/g, ' ').trim().slice(0, 1000);
+
+    // Extraer filas
+    const rows = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('tr'))
+        .map(tr => tr.innerText.replace(/\s+/g, ' ').trim())
+        .filter(t => t.length > 3)
+    );
+
+    // Extraer links que parecen permisos
+    const allLinks = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('a'))
+        .map(a => ({ text: a.innerText.trim(), href: a.href }))
+        .filter(a => a.text.length > 1)
+    );
+
+    const permitLinks = allLinks.filter(l =>
+      /\d{2}-[A-Z]{2}|\b\d{7,}\b/.test(l.text) ||
+      (/ePermittingMenu/i.test(l.href) && /\d/.test(l.href))
+    );
+
+    // Navegar a cada permiso para buscar roofing
+    let latestYear = null;
+    const roofPermits = [];
+
+    for (const link of permitLinks.slice(0, 20)) {
       try {
         await page.goto(link.href, { waitUntil: 'domcontentloaded', timeout: 15000 });
         await page.waitForTimeout(500);
@@ -83,35 +100,37 @@ async function scrapeMiamiDade(address) {
               if (!latestYear || yr > latestYear) latestYear = yr;
             }
           }
-          roofPermits.push({ text: link.text, snippet: text.slice(0, 300) });
+          roofPermits.push({ text: link.text, snippet: text.slice(0, 200) });
         }
       } catch(e) {}
     }
+
+    const scoring = calcScore(latestYear);
+
+    return {
+      county: 'miami-dade',
+      roofAge: scoring.age,
+      score: scoring.score,
+      label: scoring.label,
+      color: scoring.color,
+      latestRoofYear: latestYear,
+      permits: roofPermits.map(p => ({ raw: p.text, type: 'ROOFING', date: String(latestYear || '') })),
+      allPermits: rows,
+      debug: {
+        currentUrl,
+        totalRows: rows.length,
+        permitLinksFound: permitLinks.length,
+        allLinksFound: allLinks.length,
+        permitLinks: permitLinks.slice(0, 10),
+        roofPermits: roofPermits.length,
+        pageSnippet,
+        allLinksRaw: allLinks.slice(0, 15),
+      }
+    };
+
+  } finally {
     await browser.close();
   }
-
-  const scoring = calcScore(latestYear);
-
-  return {
-    county: 'miami-dade',
-    roofAge: scoring.age,
-    score: scoring.score,
-    label: scoring.label,
-    color: scoring.color,
-    latestRoofYear: latestYear,
-    permits: roofPermits.map(p => ({ raw: p.text, type: 'ROOFING', date: String(latestYear || '') })),
-    allPermits: rows,
-    debug: {
-      postUrl: formUrl,
-      responseStatus: response.status,
-      finalUrl: response.request?.res?.responseUrl || formUrl,
-      totalRows: rows.length,
-      totalLinks: links.length,
-      permitLinks: permitLinks.slice(0, 10),
-      roofPermits: roofPermits.length,
-      pageSnippet,
-    }
-  };
 }
 
 module.exports = { scrapeMiamiDade };
