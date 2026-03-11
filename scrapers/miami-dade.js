@@ -27,77 +27,65 @@ async function scrapeMiamiDade(address) {
     });
     await page.waitForTimeout(2000);
 
-    // Setear valores del form
-    await page.evaluate((addr) => {
-      const radio = document.querySelector('input[name="permit"][value="addr"]');
-      const input = document.querySelector('input[name="inKey"]');
-      if (radio) radio.checked = true;
-      if (input) input.value = addr;
-    }, cleanAddress);
+    // Ver estado inicial del boton y radios
+    const initialState = await page.evaluate(() => {
+      const btn = document.querySelector('input[type="submit"]');
+      const radios = Array.from(document.querySelectorAll('input[type="radio"]'));
+      const addrRadio = document.querySelector('input[name="permit"][value="addr"]');
+      return {
+        btnDisabled: btn?.disabled,
+        btnExists: !!btn,
+        totalRadios: radios.length,
+        addrRadioExists: !!addrRadio,
+        addrRadioDisabled: addrRadio?.disabled,
+        pageTitle: document.title,
+      };
+    });
 
+    // Click real en el radio button usando Playwright (fuerza el evento JS)
+    await page.locator('input[name="permit"][value="addr"]').dispatchEvent('click');
+    await page.waitForTimeout(1000);
+
+    // Ver estado despues del click
+    const afterRadioClick = await page.evaluate(() => {
+      const btn = document.querySelector('input[type="submit"]');
+      const addrRadio = document.querySelector('input[name="permit"][value="addr"]');
+      return {
+        btnDisabled: btn?.disabled,
+        addrRadioChecked: addrRadio?.checked,
+      };
+    });
+
+    // Llenar el campo
+    await page.locator('input[name="inKey"]').fill(cleanAddress);
     await page.waitForTimeout(500);
 
-    // Click submit y esperar cambio de URL o contenido nuevo
-    await page.click('input[type="submit"]');
-    
-    // Esperar que la URL cambie o que aparezca contenido nuevo
-    await page.waitForTimeout(5000);
-
-    const currentUrl = page.url();
-    const pageText = await page.evaluate(() => document.body.innerText);
-    const pageSnippet = pageText.replace(/\s+/g, ' ').trim().slice(0, 1500);
-
-    const rows = await page.evaluate(() =>
-      Array.from(document.querySelectorAll('tr'))
-        .map(tr => tr.innerText.replace(/\s+/g, ' ').trim())
-        .filter(t => t.length > 3)
-    );
-
-    const allLinks = await page.evaluate(() =>
-      Array.from(document.querySelectorAll('a'))
-        .map(a => ({ text: a.innerText.trim(), href: a.href }))
-        .filter(a => a.text.length > 1)
-    );
-
-    // Si seguimos en la misma pagina, el submit no funcionó — intentar con keyboard
-    if (currentUrl.includes('/Permits')) {
-      // Intentar con Enter en el campo
-      await page.focus('input[name="inKey"]');
-      await page.keyboard.press('Enter');
-      await page.waitForTimeout(5000);
-    }
-
-    const currentUrl2 = page.url();
-    const pageText2 = await page.evaluate(() => document.body.innerText);
-    const pageSnippet2 = pageText2.replace(/\s+/g, ' ').trim().slice(0, 1500);
-
-    const rows2 = await page.evaluate(() =>
-      Array.from(document.querySelectorAll('tr'))
-        .map(tr => tr.innerText.replace(/\s+/g, ' ').trim())
-        .filter(t => t.length > 3)
-    );
-
-    const allLinks2 = await page.evaluate(() =>
-      Array.from(document.querySelectorAll('a'))
-        .map(a => ({ text: a.innerText.trim(), href: a.href }))
-        .filter(a => a.text.length > 1)
-    );
+    // Ver estado final antes de submit
+    const beforeSubmit = await page.evaluate(() => {
+      const btn = document.querySelector('input[type="submit"]');
+      const input = document.querySelector('input[name="inKey"]');
+      return {
+        btnDisabled: btn?.disabled,
+        inputValue: input?.value,
+      };
+    });
 
     const scoring = calcScore(null);
 
     return {
       county: 'miami-dade',
-      roofAge: scoring.age,
-      score: scoring.score,
-      label: scoring.label,
-      color: scoring.color,
+      roofAge: null,
+      score: 'NO_DATA',
+      label: 'SIN DATA',
+      color: 'purple',
       latestRoofYear: null,
       permits: [],
-      allPermits: rows2,
+      allPermits: [],
       debug: {
-        afterClick: { url: currentUrl, rows: rows.length, links: allLinks.length, snippet: pageSnippet },
-        afterEnter: { url: currentUrl2, rows: rows2.length, links: allLinks2.length, snippet: pageSnippet2 },
-        allLinks2: allLinks2.slice(0, 15),
+        initialState,
+        afterRadioClick,
+        beforeSubmit,
+        cleanAddress,
       }
     };
 
