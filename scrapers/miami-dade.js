@@ -17,79 +17,68 @@ async function scrapeMiamiDade(address) {
   const page = await browser.newPage();
 
   try {
-    // Paso 1: cargar el menu para extraer el form y los radio buttons
     const menuUrl = 'https://www.miamidade.gov/Apps/RER/ePermittingMenu/Home/Permits';
     await page.goto(menuUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
-    // Extraer toda la info del form
-    const formInfo = await page.evaluate(() => {
-      const form = document.querySelector('form');
-      const radios = Array.from(document.querySelectorAll('input[type="radio"]'));
-      const textInput = document.querySelector('input[type="text"]');
-      return {
-        action: form?.action || '',
-        method: form?.method || '',
-        radios: radios.map(r => ({
-          name: r.name,
-          value: r.value,
-          rowText: r.closest('tr')?.innerText?.replace(/\s+/g, ' ').trim() || ''
-        })),
-        textInputName: textInput?.name || '',
-      };
-    });
-
-    // Encontrar el radio de busqueda por direccion
-    const addressRadio = formInfo.radios.find(r =>
-      /address/i.test(r.rowText) && /cross.reference/i.test(r.rowText)
-    ) || formInfo.radios[formInfo.radios.length - 2];
-
     const cleanAddress = address.replace(/,.*$/, '').trim().toUpperCase();
 
-    // Paso 2: navegar directamente a la URL de busqueda con los parametros correctos
-    const searchUrl = new URL(formInfo.action || 'https://www.miamidade.gov/Apps/RER/ePermittingMenu/Process/Permits');
-    searchUrl.searchParams.set(formInfo.textInputName || 'Value', cleanAddress);
-    if (addressRadio) searchUrl.searchParams.set(addressRadio.name || 'Inquiry', addressRadio.value);
+    // Seleccionar radio "addr" = Process/Permit Number Cross-Reference (Address)
+    await page.evaluate(() => {
+      const radio = document.querySelector('input[name="permit"][value="addr"]');
+      if (radio) radio.checked = true;
+    });
 
-    await page.goto(searchUrl.toString(), { waitUntil: 'domcontentloaded', timeout: 30000 });
+    // Llenar el campo inKey con la direccion
+    await page.evaluate((addr) => {
+      const input = document.querySelector('input[name="inKey"]');
+      if (input) input.value = addr;
+    }, cleanAddress);
+
+    // Hacer submit del form (POST)
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }),
+      page.evaluate(() => document.querySelector('form').submit())
+    ]);
+
     await page.waitForTimeout(2000);
 
     const currentUrl = page.url();
-    const pageSnippet = await page.evaluate(() => document.body.innerText.slice(0, 800));
+    const pageSnippet = await page.evaluate(() => document.body.innerText.slice(0, 1000));
 
-    // Extraer filas
+    // Extraer filas de la tabla de resultados
     const rows = await page.evaluate(() =>
       Array.from(document.querySelectorAll('tr'))
         .map(tr => tr.innerText.replace(/\s+/g, ' ').trim())
         .filter(t => t.length > 3)
     );
 
-    // Extraer links — cada link es un numero de permiso individual
+    // Extraer links de permisos individuales
     const links = await page.evaluate(() =>
       Array.from(document.querySelectorAll('a'))
         .map(a => ({ text: a.innerText.trim(), href: a.href }))
-        .filter(a => /\d/.test(a.text) && a.href.includes('RER'))
+        .filter(a => a.text.length > 2)
     );
 
-    // Navegar a cada permiso individual para buscar permisos de techo
+    // Navegar a cada permiso para buscar roofing
     const roofPermits = [];
     let latestYear = null;
 
-    for (const link of links.slice(0, 15)) {
+    for (const link of links.filter(l => l.href.includes('RER')).slice(0, 20)) {
       try {
         await page.goto(link.href, { waitUntil: 'domcontentloaded', timeout: 15000 });
-        await page.waitForTimeout(1000);
-        const permitText = await page.evaluate(() => document.body.innerText);
-        if (/roof|roofing/i.test(permitText)) {
-          const years = permitText.match(/\b(19|20)\d{2}\b/g) || [];
+        await page.waitForTimeout(500);
+        const text = await page.evaluate(() => document.body.innerText);
+        if (/roof|roofing/i.test(text)) {
+          const years = text.match(/\b(19|20)\d{2}\b/g) || [];
           for (const y of years) {
             const yr = parseInt(y);
             if (yr >= 1990 && yr <= new Date().getFullYear()) {
               if (!latestYear || yr > latestYear) latestYear = yr;
             }
           }
-          roofPermits.push({ text: link.text, href: link.href, snippet: permitText.slice(0, 200) });
+          roofPermits.push(link.text);
         }
-      } catch(e) { /* continuar */ }
+      } catch(e) {}
     }
 
     const scoring = calcScore(latestYear);
@@ -101,17 +90,16 @@ async function scrapeMiamiDade(address) {
       label: scoring.label,
       color: scoring.color,
       latestRoofYear: latestYear,
-      permits: roofPermits.map(p => ({ raw: p.text, type: 'ROOFING', date: String(latestYear || '') })),
+      permits: roofPermits.map(t => ({ raw: t, type: 'ROOFING', date: String(latestYear || '') })),
       allPermits: rows,
       debug: {
-        formInfo,
-        addressRadio,
-        searchUrl: searchUrl.toString(),
         currentUrl,
         totalRows: rows.length,
-        links: links.slice(0, 10),
+        totalLinks: links.length,
+        rerLinks: links.filter(l => l.href.includes('RER')).length,
         roofPermits: roofPermits.length,
         pageSnippet,
+        allLinks: links.slice(0, 15),
       }
     };
 
