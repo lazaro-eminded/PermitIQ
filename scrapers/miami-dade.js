@@ -1,4 +1,5 @@
-﻿const { chromium } = require('playwright');
+﻿const axios = require('axios');
+const cheerio = require('cheerio');
 const config = require('../config');
 
 function calcScore(year) {
@@ -10,90 +11,126 @@ function calcScore(year) {
 }
 
 async function scrapeMiamiDade(address) {
-  const browser = await chromium.launch({
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-  });
-  const context = await browser.newContext({
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36'
-  });
-  const page = await context.newPage();
+  const cleanAddress = address.replace(/,.*$/, '').trim().toUpperCase();
+  const baseUrl = 'https://www.miamidade.gov/Apps/RER/ePermittingMenu/Home/Permits';
+  const postUrl = 'https://www.miamidade.gov/Apps/RER/ePermittingMenu/Home/Process';
 
-  // Capturar todas las llamadas de red
-  const networkCalls = [];
-  page.on('request', req => {
-    const url = req.url();
-    if (!url.includes('font') && !url.includes('.png') && !url.includes('.css') && !url.includes('.js')) {
-      networkCalls.push({ type: 'request', method: req.method(), url: url.slice(0, 200) });
-    }
-  });
-  page.on('response', async res => {
-    const url = res.url();
-    const ct = res.headers()['content-type'] || '';
-    if (ct.includes('json') && !url.includes('font')) {
-      try {
-        const text = await res.text();
-        networkCalls.push({ type: 'response_json', url: url.slice(0, 200), body: text.slice(0, 400) });
-      } catch(e) {}
-    }
+  const headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.5',
+  };
+
+  // Paso 1: GET para obtener cookies y ViewState
+  const getResp = await axios.get(baseUrl, { headers, withCredentials: true });
+  const cookies = getResp.headers['set-cookie']?.map(c => c.split(';')[0]).join('; ') || '';
+  const $ = cheerio.load(getResp.data);
+
+  // Extraer ViewState y otros campos ocultos de ASP.NET
+  const viewState = $('input[name="__VIEWSTATE"]').val() || '';
+  const viewStateGen = $('input[name="__VIEWSTATEGENERATOR"]').val() || '';
+  const eventValidation = $('input[name="__EVENTVALIDATION"]').val() || '';
+
+  // Extraer todos los radio buttons para debug
+  const radios = [];
+  $('input[type="radio"]').each((i, el) => {
+    radios.push({ name: $(el).attr('name'), value: $(el).attr('value') });
   });
 
-  try {
-    const cleanAddress = address.replace(/,.*$/, '').trim().toUpperCase();
-    // Separar numero y nombre de calle
-    const parts = cleanAddress.match(/^(\d+)\s+(.+)$/);
-    const streetNum = parts ? parts[1] : '';
-    const streetName = parts ? parts[2] : cleanAddress;
+  // Paso 2: POST con ViewState + campos del form
+  const formData = new URLSearchParams();
+  if (viewState) formData.append('__VIEWSTATE', viewState);
+  if (viewStateGen) formData.append('__VIEWSTATEGENERATOR', viewStateGen);
+  if (eventValidation) formData.append('__EVENTVALIDATION', eventValidation);
+  formData.append('permit', 'addr');
+  formData.append('inKey', cleanAddress);
+  formData.append('Submit1', 'Submit');
 
-    // Cargar EPS Portal y buscar el Advanced Search
-    await page.goto('https://www.miamidade.gov/Apps/RER/EPSPortal', {
-      waitUntil: 'networkidle', timeout: 30000
-    });
-    await page.waitForTimeout(2000);
+  const postResp = await axios.post(postUrl, formData.toString(), {
+    headers: {
+      ...headers,
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Referer': baseUrl,
+      'Cookie': cookies,
+    },
+    maxRedirects: 5,
+    timeout: 30000,
+  });
 
-    // Buscar boton de Advanced Search
-    const advancedBtn = await page.$('a:has-text("Advanced"), button:has-text("Advanced"), [href*="advanced"], [href*="search"]');
-    if (advancedBtn) {
-      await advancedBtn.click();
-      await page.waitForTimeout(2000);
-    }
+  const $2 = cheerio.load(postResp.data);
+  const pageText = $2('body').text().replace(/\s+/g, ' ').trim();
+  const pageSnippet = pageText.slice(0, 1000);
 
-    const pageText1 = await page.evaluate(() => document.body.innerText.slice(0, 500));
-    const inputs1 = await page.evaluate(() =>
-      Array.from(document.querySelectorAll('input, select'))
-        .map(el => ({ tag: el.tagName, type: el.type, id: el.id, name: el.name, placeholder: el.placeholder }))
-        .slice(0, 15)
-    );
-    const links1 = await page.evaluate(() =>
-      Array.from(document.querySelectorAll('a'))
-        .map(a => ({ text: a.innerText.trim().slice(0, 50), href: a.href.slice(0, 100) }))
-        .filter(a => a.text.length > 2)
-        .slice(0, 15)
-    );
+  // Extraer filas de tabla
+  const rows = [];
+  $2('tr').each((i, tr) => {
+    const text = $2(tr).text().replace(/\s+/g, ' ').trim();
+    if (text.length > 3) rows.push(text);
+  });
 
-    return {
-      county: 'miami-dade',
-      roofAge: null,
-      score: 'NO_DATA',
-      label: 'SIN DATA',
-      color: 'purple',
-      latestRoofYear: null,
-      permits: [],
-      allPermits: [],
-      debug: {
-        cleanAddress,
-        streetNum,
-        streetName,
-        pageText1,
-        inputs1,
-        links1,
-        networkCalls: networkCalls.slice(0, 20),
+  // Extraer links
+  const links = [];
+  $2('a').each((i, a) => {
+    const text = $2(a).text().trim();
+    const href = $2(a).attr('href') || '';
+    if (text.length > 2 && href) links.push({ text, href });
+  });
+
+  // Filtrar links que parecen permisos
+  const permitLinks = links.filter(l =>
+    /\d{2}-[A-Z]{2}|\b\d{6,}\b/.test(l.text) ||
+    (/ePermittingMenu/i.test(l.href) && /\d/.test(l.href))
+  );
+
+  // Navegar a permisos individuales con axios para buscar roofing
+  let latestYear = null;
+  const roofPermits = [];
+
+  for (const link of permitLinks.slice(0, 20)) {
+    try {
+      const href = link.href.startsWith('http')
+        ? link.href
+        : `https://www.miamidade.gov${link.href}`;
+      const r = await axios.get(href, { headers: { ...headers, Cookie: cookies }, timeout: 10000 });
+      const text = cheerio.load(r.data)('body').text();
+      if (/roof|roofing/i.test(text)) {
+        const years = text.match(/\b(19|20)\d{2}\b/g) || [];
+        for (const y of years) {
+          const yr = parseInt(y);
+          if (yr >= 1990 && yr <= new Date().getFullYear()) {
+            if (!latestYear || yr > latestYear) latestYear = yr;
+          }
+        }
+        roofPermits.push(link.text);
       }
-    };
-
-  } finally {
-    await browser.close();
+    } catch(e) {}
   }
+
+  const scoring = calcScore(latestYear);
+
+  return {
+    county: 'miami-dade',
+    roofAge: scoring.age,
+    score: scoring.score,
+    label: scoring.label,
+    color: scoring.color,
+    latestRoofYear: latestYear,
+    permits: roofPermits.map(t => ({ raw: t, type: 'ROOFING', date: String(latestYear || '') })),
+    allPermits: rows,
+    debug: {
+      viewStateFound: viewState.length > 0,
+      eventValidationFound: eventValidation.length > 0,
+      cookiesFound: cookies.length > 0,
+      radios,
+      postStatus: postResp.status,
+      totalRows: rows.length,
+      totalLinks: links.length,
+      permitLinksFound: permitLinks.length,
+      permitLinks: permitLinks.slice(0, 10),
+      roofPermits: roofPermits.length,
+      pageSnippet,
+    }
+  };
 }
 
 module.exports = { scrapeMiamiDade };
