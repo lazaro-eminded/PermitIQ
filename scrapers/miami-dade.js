@@ -9,33 +9,37 @@ function calcScore(year) {
   return { score: 'OK', label: 'OK — Cold', color: 'green', age };
 }
 
+const BASE = 'https://gisweb.miamidade.gov/arcgis/rest/services';
+
 const ENDPOINTS = [
-  'https://gisweb.miamidade.gov/arcgis/rest/services/RER/BuildingPermit/MapServer/0/query',
-  'https://gisweb.miamidade.gov/arcgis/rest/services/RER/MD_BuildingPermit/MapServer/0/query',
-  'https://gisweb.miamidade.gov/arcgis/rest/services/LandManagement/BuildingPermit/MapServer/0/query',
-  'https://services.arcgis.com/8Pc9XBTAsYuxx9Ny/arcgis/rest/services/BuildingPermit/FeatureServer/0/query',
+  `${BASE}/MD_LandInformation/MapServer`,
+  `${BASE}/LandManagement/MD_LandInformation/MapServer`,
+  `${BASE}/LandManagement/MD_LandMgtViewer/MapServer`,
+  `${BASE}/EnerGov/MD_LandMgtViewer/MapServer`,
+  `${BASE}/Flipper/MD_Flipper/MapServer`,
 ];
 
 async function scrapeMiamiDade(address) {
   const cleanAddress = address.replace(/,.*$/, '').trim().toUpperCase();
-  const addressLike = cleanAddress.split(' ').slice(0, 3).join(' ');
 
-  const results = [];
-
+  // Primero: descubrir qué layers existen en cada endpoint
+  const discovery = [];
   for (const endpoint of ENDPOINTS) {
     try {
-      const res = await axios.get(endpoint, {
-        params: { where: `SITE_ADDRESS LIKE '${addressLike}%'`, outFields: '*', f: 'json' },
-        timeout: 15000
-      });
-      results.push({
-        endpoint,
-        status: res.status,
-        dataKeys: Object.keys(res.data || {}),
-        snippet: JSON.stringify(res.data).slice(0, 300),
-      });
+      const res = await axios.get(endpoint, { params: { f: 'json' }, timeout: 10000 });
+      const data = res.data;
+      if (data.layers) {
+        discovery.push({
+          endpoint,
+          layers: data.layers.map(l => `${l.id}: ${l.name}`),
+        });
+      } else if (data.error) {
+        discovery.push({ endpoint, error: data.error.message });
+      } else {
+        discovery.push({ endpoint, keys: Object.keys(data) });
+      }
     } catch(e) {
-      results.push({ endpoint, error: e.message.slice(0, 100) });
+      discovery.push({ endpoint, error: e.message.slice(0, 80) });
     }
   }
 
@@ -43,7 +47,7 @@ async function scrapeMiamiDade(address) {
     county: 'miami-dade',
     roofAge: null, score: 'NO_DATA', label: 'SIN DATA', color: 'purple',
     latestRoofYear: null, permits: [], allPermits: [],
-    debug: { addressLike, results }
+    debug: { cleanAddress, discovery }
   };
 }
 
