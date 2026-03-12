@@ -1,7 +1,5 @@
 ﻿const axios = require('axios');
 
-const PERMIT_URL = 'https://services.arcgis.com/8Pc9XBTAsYuxx9Ny/arcgis/rest/services/Building_Permits_since_2014/FeatureServer/0/query';
-
 const ROOF_TYPES = new Set(['ROOF','ROOFING','ROOF REPAIR','ROOF REPLACEMENT','TILE ROOF','SHINGLE ROOF','FLAT ROOF','METAL ROOF']);
 const ROOF_KW = ['ROOF','SHINGLE','TILE','FLAT','SBS','SINGLE PLY','GRAVEL','ASPHALT','METAL ROOF','WOOD SHAKE'];
 const ELEC_KW = ['ELECTRICAL','ELECTRIC','SOLAR','PANEL','SERVICE CHANGE','LOW VOLTAGE'];
@@ -16,16 +14,44 @@ function permitCategory(type, desc) {
   return 'OTHER';
 }
 
+// Intentar descubrir la URL real del FeatureServer via Hub API
+let _resolvedUrl = null;
+async function getPermitUrl() {
+  if (_resolvedUrl) return _resolvedUrl;
+  const CANDIDATES = [
+    'https://services.arcgis.com/8Pc9XBTAsYuxx9Ny/arcgis/rest/services/Building_Permits_since_2014/FeatureServer/0/query',
+    'https://services1.arcgis.com/8Pc9XBTAsYuxx9Ny/arcgis/rest/services/Building_Permits_since_2014/FeatureServer/0/query',
+    'https://services2.arcgis.com/8Pc9XBTAsYuxx9Ny/arcgis/rest/services/Building_Permits_since_2014/FeatureServer/0/query',
+    'https://services3.arcgis.com/8Pc9XBTAsYuxx9Ny/arcgis/rest/services/Building_Permits_since_2014/FeatureServer/0/query',
+  ];
+  for (const url of CANDIDATES) {
+    try {
+      const probe = await axios.get(url.replace('/query', ''), { params: { f: 'json' }, timeout: 8000 });
+      if (probe.data && !probe.data.error) {
+        console.log('[city-of-miami] URL valida encontrada:', url);
+        _resolvedUrl = url;
+        return url;
+      }
+      console.log('[city-of-miami] probe fallida:', url, probe.data?.error?.message);
+    } catch (e) {
+      console.log('[city-of-miami] probe error:', url, e.message);
+    }
+  }
+  return null;
+}
+
 async function scrapePermits(folio, address) {
-  console.log('[city-of-miami] URL:', PERMIT_URL);
-  console.log('[city-of-miami] folio:', folio, 'address:', address);
+  const PERMIT_URL = await getPermitUrl();
+  if (!PERMIT_URL) {
+    console.warn('[city-of-miami] No se pudo encontrar URL valida del FeatureServer');
+    return [];
+  }
 
   let rawPermits = [];
 
   if (folio) {
     try {
       const where = "FOLIO = '" + folio + "'";
-      console.log('[city-of-miami] where clause:', where);
       const res = await axios.get(PERMIT_URL, {
         params: { where: where, outFields: 'FOLIO,ADDRESS,PERMIT_NUMBER,ISSUED_DATE,PERMIT_TYPE,WORK_DESCRIPTION,CONTRACTOR_NAME,STATUS', resultRecordCount: 200, orderByFields: 'ISSUED_DATE DESC', f: 'json' },
         timeout: 25000,
