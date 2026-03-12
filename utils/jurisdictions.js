@@ -1,8 +1,6 @@
 ﻿const JURISDICTIONS = {
-  'City of Miami': {
-    name:    'City of Miami',
-    scraper: 'city-of-miami',
-  },
+  'City of Miami': { name: 'City of Miami', scraper: 'city-of-miami' },
+  'Miami':         { name: 'City of Miami', scraper: 'city-of-miami' },
 };
 
 function getJurisdiction(municipality) {
