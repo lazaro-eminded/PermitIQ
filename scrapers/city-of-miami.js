@@ -1,5 +1,6 @@
 ﻿const axios = require('axios');
 
+const ITEM_ID = '1d6fc60b087c4bcaa22345f429a2ec5a';
 const ROOF_TYPES = new Set(['ROOF','ROOFING','ROOF REPAIR','ROOF REPLACEMENT','TILE ROOF','SHINGLE ROOF','FLAT ROOF','METAL ROOF']);
 const ROOF_KW = ['ROOF','SHINGLE','TILE','FLAT','SBS','SINGLE PLY','GRAVEL','ASPHALT','METAL ROOF','WOOD SHAKE'];
 const ELEC_KW = ['ELECTRICAL','ELECTRIC','SOLAR','PANEL','SERVICE CHANGE','LOW VOLTAGE'];
@@ -14,36 +15,31 @@ function permitCategory(type, desc) {
   return 'OTHER';
 }
 
-// Intentar descubrir la URL real del FeatureServer via Hub API
-let _resolvedUrl = null;
-async function getPermitUrl() {
-  if (_resolvedUrl) return _resolvedUrl;
-  const CANDIDATES = [
-    'https://services.arcgis.com/8Pc9XBTAsYuxx9Ny/arcgis/rest/services/Building_Permits_since_2014/FeatureServer/0/query',
-    'https://services1.arcgis.com/8Pc9XBTAsYuxx9Ny/arcgis/rest/services/Building_Permits_since_2014/FeatureServer/0/query',
-    'https://services2.arcgis.com/8Pc9XBTAsYuxx9Ny/arcgis/rest/services/Building_Permits_since_2014/FeatureServer/0/query',
-    'https://services3.arcgis.com/8Pc9XBTAsYuxx9Ny/arcgis/rest/services/Building_Permits_since_2014/FeatureServer/0/query',
-  ];
-  for (const url of CANDIDATES) {
-    try {
-      const probe = await axios.get(url.replace('/query', ''), { params: { f: 'json' }, timeout: 8000 });
-      if (probe.data && !probe.data.error) {
-        console.log('[city-of-miami] URL valida encontrada:', url);
-        _resolvedUrl = url;
-        return url;
-      }
-      console.log('[city-of-miami] probe fallida:', url, probe.data?.error?.message);
-    } catch (e) {
-      console.log('[city-of-miami] probe error:', url, e.message);
+let _permitUrl = null;
+
+async function resolveUrl() {
+  if (_permitUrl) return _permitUrl;
+  try {
+    const itemRes = await axios.get('https://www.arcgis.com/sharing/rest/content/items/' + ITEM_ID, {
+      params: { f: 'json' }, timeout: 10000,
+    });
+    const serviceUrl = itemRes.data?.url;
+    console.log('[city-of-miami] item url:', serviceUrl);
+    if (serviceUrl) {
+      _permitUrl = serviceUrl.replace(/\/$/, '') + '/0/query';
+      console.log('[city-of-miami] permit url resuelto:', _permitUrl);
+      return _permitUrl;
     }
+  } catch(e) {
+    console.warn('[city-of-miami] resolveUrl error:', e.message);
   }
   return null;
 }
 
 async function scrapePermits(folio, address) {
-  const PERMIT_URL = await getPermitUrl();
+  const PERMIT_URL = await resolveUrl();
   if (!PERMIT_URL) {
-    console.warn('[city-of-miami] No se pudo encontrar URL valida del FeatureServer');
+    console.warn('[city-of-miami] no se pudo resolver URL, retornando []');
     return [];
   }
 
@@ -51,26 +47,24 @@ async function scrapePermits(folio, address) {
 
   if (folio) {
     try {
-      const where = "FOLIO = '" + folio + "'";
       const res = await axios.get(PERMIT_URL, {
-        params: { where: where, outFields: 'FOLIO,ADDRESS,PERMIT_NUMBER,ISSUED_DATE,PERMIT_TYPE,WORK_DESCRIPTION,CONTRACTOR_NAME,STATUS', resultRecordCount: 200, orderByFields: 'ISSUED_DATE DESC', f: 'json' },
+        params: { where: "FOLIO = '" + folio + "'", outFields: 'FOLIO,ADDRESS,PERMIT_NUMBER,ISSUED_DATE,PERMIT_TYPE,WORK_DESCRIPTION,CONTRACTOR_NAME,STATUS', resultRecordCount: 200, orderByFields: 'ISSUED_DATE DESC', f: 'json' },
         timeout: 25000,
       });
       rawPermits = res.data?.features?.map(f => f.attributes) || [];
       if (res.data?.error) { console.warn('[city-of-miami] API error:', JSON.stringify(res.data.error)); rawPermits = []; }
-      console.log('[city-of-miami] results by FOLIO:', rawPermits.length);
+      console.log('[city-of-miami] results by FOLIO:', rawPermits.length, '| sample fields:', rawPermits[0] ? Object.keys(rawPermits[0]).join(',') : 'none');
     } catch (e) { console.warn('[city-of-miami] FOLIO fallo:', e.message); }
   }
 
   if (rawPermits.length === 0 && address) {
     try {
-      const where2 = "ADDRESS LIKE '" + address + "%'";
       const res = await axios.get(PERMIT_URL, {
-        params: { where: where2, outFields: 'FOLIO,ADDRESS,PERMIT_NUMBER,ISSUED_DATE,PERMIT_TYPE,WORK_DESCRIPTION,CONTRACTOR_NAME,STATUS', resultRecordCount: 100, orderByFields: 'ISSUED_DATE DESC', f: 'json' },
+        params: { where: "ADDRESS LIKE '" + address + "%'", outFields: 'FOLIO,ADDRESS,PERMIT_NUMBER,ISSUED_DATE,PERMIT_TYPE,WORK_DESCRIPTION,CONTRACTOR_NAME,STATUS', resultRecordCount: 10, f: 'json' },
         timeout: 25000,
       });
       rawPermits = res.data?.features?.map(f => f.attributes) || [];
-      console.log('[city-of-miami] results by ADDRESS:', rawPermits.length);
+      console.log('[city-of-miami] results by ADDRESS:', rawPermits.length, '| sample:', JSON.stringify(rawPermits[0] || null));
     } catch (e) { console.warn('[city-of-miami] ADDRESS fallo:', e.message); }
   }
 
