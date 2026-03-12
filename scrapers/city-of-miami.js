@@ -2,41 +2,58 @@
 
 const LAYER_URL = 'https://services1.arcgis.com/CvuPhqcTQpZPT9qY/arcgis/rest/services/Building_Permits_Since_2014/FeatureServer/0/query';
 
+const ROOF_SCOPE = new Set(['ROOF','ROOFING','ROOF REPAIR','ROOF REPLACEMENT','TILE ROOF','SHINGLE ROOF','FLAT ROOF','METAL ROOF','REROOF','BUILDING ROOFING']);
+const ROOF_KW  = ['ROOF','SHINGLE','TILE','FLAT ROOF','SBS','SINGLE PLY','GRAVEL','ASPHALT','METAL ROOF','WOOD SHAKE','REROOF'];
+const ELEC_KW  = ['ELECTRICAL','ELECTRIC','SOLAR','PANEL','SERVICE CHANGE','LOW VOLTAGE','GENERATOR'];
+const AC_KW    = ['A/C','AIR COND','HVAC','MECHANICAL','HEAT PUMP','MINI SPLIT','REFRIGERATION','COOLING'];
+
+function permitCategory(scope, workItems) {
+  const s = (scope     || '').toUpperCase();
+  const w = (workItems || '').toUpperCase();
+  if (ROOF_SCOPE.has(s) || ROOF_KW.some(k => s.includes(k) || w.includes(k))) return 'ROOF';
+  if (ELEC_KW.some(k => s.includes(k) || w.includes(k))) return 'ELECTRIC';
+  if (AC_KW.some(k => s.includes(k) || w.includes(k)))   return 'AC';
+  return 'OTHER';
+}
+
 async function scrapePermits(folio, address) {
-  const folioNum = parseInt(folio, 10);
-  const streetNum = address.match(/^(\d+)/)?.[1] || '';
-
-  // Test 1: folio exacto
-  let t1 = [];
+  if (!folio) return [];
+  let rawPermits = [];
   try {
-    const r = await axios.get(LAYER_URL, { params: { where: 'FolioNumber = ' + folioNum, outFields: 'FolioNumber,DeliveryAddress,ScopeofWork', resultRecordCount: 5, f: 'json' }, timeout: 10000 });
-    t1 = r.data?.features?.map(f => f.attributes) || [];
-    console.log('[debug] t1 folio=' + folioNum + ' count:', t1.length);
-  } catch(e) { console.log('[debug] t1 error:', e.message); }
+    const folioNum = parseInt(folio, 10);
+    const res = await axios.get(LAYER_URL, {
+      params: {
+        where: 'FolioNumber = ' + folioNum,
+        outFields: 'FolioNumber,DeliveryAddress,PermitNumber,IssuedDate,ScopeofWork,WorkItems,CompanyName,BuildingPermitStatusDescription,IsPermitFinal',
+        resultRecordCount: 200,
+        orderByFields: 'IssuedDate DESC',
+        f: 'json',
+      },
+      timeout: 25000,
+    });
+    rawPermits = res.data?.features?.map(f => f.attributes) || [];
+    if (res.data?.error) { console.warn('[city-of-miami] error:', JSON.stringify(res.data.error)); rawPermits = []; }
+    console.log('[city-of-miami] permits:', rawPermits.length, '| folio:', folioNum);
+  } catch (e) { console.warn('[city-of-miami] fallo:', e.message); }
 
-  // Test 2: solo numero de calle en DeliveryAddress
-  let t2 = [];
-  try {
-    const r = await axios.get(LAYER_URL, { params: { where: "DeliveryAddress LIKE '" + streetNum + " %'", outFields: 'FolioNumber,DeliveryAddress,ScopeofWork', resultRecordCount: 5, f: 'json' }, timeout: 10000 });
-    t2 = r.data?.features?.map(f => f.attributes) || [];
-    console.log('[debug] t2 streetNum=' + streetNum + ' count:', t2.length, 'sample:', JSON.stringify(t2[0] || null));
-  } catch(e) { console.log('[debug] t2 error:', e.message); }
-
-  // Test 3: rango de FolioNumber para folio 01-41xx (primer digito 1 seguido de 41)
-  let t3 = [];
-  try {
-    const r = await axios.get(LAYER_URL, { params: { where: 'FolioNumber >= 141000000000 AND FolioNumber <= 142000000000', outFields: 'FolioNumber,DeliveryAddress', resultRecordCount: 5, f: 'json' }, timeout: 10000 });
-    t3 = r.data?.features?.map(f => f.attributes) || [];
-    console.log('[debug] t3 folio range 141xxx count:', t3.length, 'samples:', JSON.stringify(t3));
-  } catch(e) { console.log('[debug] t3 error:', e.message); }
-
-  // Test 4: ver cuantos registros totales tiene el dataset
-  try {
-    const r = await axios.get(LAYER_URL, { params: { where: '1=1', returnCountOnly: true, f: 'json' }, timeout: 10000 });
-    console.log('[debug] total registros dataset:', r.data?.count);
-  } catch(e) { console.log('[debug] count error:', e.message); }
-
-  return [];
+  return rawPermits.map(p => {
+    const dt = p.IssuedDate ? new Date(p.IssuedDate) : null;
+    const scope = (p.ScopeofWork || '').trim();
+    const work  = (p.WorkItems   || '').trim();
+    return {
+      date:        dt ? dt.toLocaleDateString('en-US') : 'N/A',
+      year:        dt ? dt.getFullYear() : null,
+      month:       dt ? String(dt.getMonth() + 1).padStart(2, '0') : null,
+      type:        scope,
+      cat:         '',
+      description: work || scope,
+      status:      (p.BuildingPermitStatusDescription || '').trim(),
+      contractor:  (p.CompanyName || '').trim(),
+      permitNo:    (p.PermitNumber || '').trim(),
+      category:    permitCategory(scope, work),
+      source:      'city-of-miami',
+    };
+  });
 }
 
 module.exports = { scrapePermits };
