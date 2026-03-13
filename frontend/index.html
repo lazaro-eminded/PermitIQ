@@ -3,319 +3,167 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PermitIQ — Consulta de Permisos</title>
+  <title>PermitIQ</title>
   <style>
-    :root {
-      --bg:      #0f1117;
-      --card:    #1a1d27;
-      --border:  #2a2d3a;
-      --accent:  #4f8ef7;
-      --text:    #e2e8f0;
-      --muted:   #8892a4;
-      --success: #22c55e;
-      --warn:    #f59e0b;
-      --danger:  #ef4444;
-      --purple:  #a855f7;
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: 'Segoe UI', system-ui, sans-serif;
-      min-height: 100vh;
-    }
-    header {
-      padding: 1.5rem 2rem;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-    }
-    header .logo { font-size: 1.5rem; font-weight: 700; color: var(--accent); }
-    header .sub  { font-size: 0.85rem; color: var(--muted); }
-    main { max-width: 860px; margin: 2rem auto; padding: 0 1rem; }
-
-    /* Search card */
-    .search-card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 1.5rem;
-      margin-bottom: 1.5rem;
-    }
-    .search-card h2 { font-size: 1rem; color: var(--muted); margin-bottom: 1rem; text-transform: uppercase; letter-spacing: .05em; }
-    .form-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 0.75rem;
-    }
-    .form-grid .full { grid-column: 1 / -1; }
-    label { font-size: 0.78rem; color: var(--muted); display: block; margin-bottom: 4px; }
-    input {
-      width: 100%;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      color: var(--text);
-      padding: 0.55rem 0.75rem;
-      font-size: 0.92rem;
-      outline: none;
-      transition: border-color .2s;
-    }
-    input:focus { border-color: var(--accent); }
-    .btn {
-      width: 100%;
-      padding: 0.7rem;
-      border: none;
-      border-radius: 8px;
-      font-size: 0.95rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: opacity .2s, transform .1s;
-    }
-    .btn:active { transform: scale(.98); }
-    .btn-primary { background: var(--accent); color: #fff; }
-    .btn-primary:hover { opacity: .9; }
-    .btn-primary:disabled { opacity: .45; cursor: not-allowed; }
-    .btn-ghl { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; margin-top: 0.5rem; }
-
-    /* Status */
-    #status {
-      font-size: 0.9rem;
-      padding: 0.5rem 0;
-      color: var(--muted);
-      min-height: 1.4rem;
-      text-align: center;
-    }
-
-    /* Results */
-    #results { display: none; }
-    .score-banner {
-      border-radius: 10px;
-      padding: 1.2rem 1.5rem;
-      margin-bottom: 1rem;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 1rem;
-    }
-    .score-banner.CRITICAL { background: rgba(239,68,68,.15);  border: 1px solid rgba(239,68,68,.4); }
-    .score-banner.WARM     { background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.4); }
-    .score-banner.OK       { background: rgba(34,197,94,.1);   border: 1px solid rgba(34,197,94,.35); }
-    .score-banner.NO_DATA  { background: rgba(168,85,247,.1);  border: 1px solid rgba(168,85,247,.35); }
-    .score-label { font-size: 1.4rem; font-weight: 700; }
-    .score-meta  { font-size: 0.82rem; color: var(--muted); margin-top: 2px; }
-
-    .info-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-      gap: 0.75rem;
-      margin-bottom: 1rem;
-    }
-    .info-box {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 0.75rem 1rem;
-    }
-    .info-box .lbl { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
-    .info-box .val { font-size: 0.95rem; font-weight: 600; margin-top: 3px; }
-
-    /* Permits table */
-    .permits-card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      overflow: hidden;
-      margin-bottom: 1rem;
-    }
-    .permits-card h3 {
-      padding: 0.85rem 1.2rem;
-      font-size: 0.88rem;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: .05em;
-      border-bottom: 1px solid var(--border);
-    }
-    table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
-    th {
-      padding: 0.55rem 1rem;
-      text-align: left;
-      background: rgba(255,255,255,.03);
-      color: var(--muted);
-      font-weight: 500;
-      font-size: 0.75rem;
-      text-transform: uppercase;
-    }
-    td { padding: 0.55rem 1rem; border-top: 1px solid var(--border); vertical-align: top; }
-    tr:hover td { background: rgba(255,255,255,.025); }
-    .badge {
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: 20px;
-      font-size: 0.72rem;
-      font-weight: 600;
-    }
-    .badge-roof    { background: rgba(239,68,68,.2);  color: #f87171; }
-    .badge-ac      { background: rgba(99,102,241,.2); color: #818cf8; }
-    .badge-electric{ background: rgba(245,158,11,.2); color: #fcd34d; }
-    .badge-other   { background: rgba(148,163,184,.1);color: var(--muted); }
+    :root { --bg:#0f1117;--card:#1a1d27;--border:#2a2d3a;--accent:#4f8ef7;--text:#e2e8f0;--muted:#8892a4; }
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh;}
+    header{padding:1.2rem 2rem;border-bottom:1px solid var(--border);display:flex;align-items:center;}
+    .logo{font-size:1.4rem;font-weight:700;color:var(--accent);}
+    .sub{font-size:.82rem;color:var(--muted);margin-top:2px;}
+    main{max-width:820px;margin:2rem auto;padding:0 1rem;}
+    .search-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.4rem;margin-bottom:1.2rem;}
+    .row{display:flex;gap:.6rem;margin-bottom:.6rem;}
+    label{font-size:.76rem;color:var(--muted);display:block;margin-bottom:4px;}
+    input{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:.55rem .75rem;font-size:.92rem;outline:none;transition:border-color .2s;}
+    input:focus{border-color:var(--accent);}
+    .btn{padding:.65rem 1.4rem;border:none;border-radius:8px;font-size:.92rem;font-weight:600;cursor:pointer;white-space:nowrap;}
+    .btn-primary{background:var(--accent);color:#fff;}
+    .btn-primary:disabled{opacity:.4;cursor:not-allowed;}
+    .btn-ghl{background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;width:100%;}
+    #status{font-size:.88rem;padding:.4rem 0;color:var(--muted);min-height:1.3rem;text-align:center;}
+    .score-banner{border-radius:10px;padding:1.1rem 1.4rem;margin-bottom:1rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;}
+    .score-banner.CRITICAL{background:rgba(239,68,68,.14);border:1px solid rgba(239,68,68,.4);}
+    .score-banner.WARM{background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.4);}
+    .score-banner.OK{background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.35);}
+    .score-banner.NO_DATA{background:rgba(168,85,247,.1);border:1px solid rgba(168,85,247,.35);}
+    .score-label{font-size:1.3rem;font-weight:700;}
+    .score-meta{font-size:.8rem;color:var(--muted);margin-top:3px;}
+    .info-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.65rem;margin-bottom:1rem;}
+    .info-box{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:.7rem .9rem;}
+    .info-box .lbl{font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}
+    .info-box .val{font-size:.9rem;font-weight:600;margin-top:3px;}
+    .permits-card{background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:1rem;}
+    .permits-card h3{padding:.8rem 1.2rem;font-size:.84rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);}
+    table{width:100%;border-collapse:collapse;font-size:.82rem;}
+    th{padding:.5rem 1rem;text-align:left;background:rgba(255,255,255,.03);color:var(--muted);font-size:.72rem;text-transform:uppercase;font-weight:500;}
+    td{padding:.5rem 1rem;border-top:1px solid var(--border);vertical-align:top;}
+    tr:hover td{background:rgba(255,255,255,.02);}
+    .badge{display:inline-block;padding:2px 7px;border-radius:20px;font-size:.7rem;font-weight:600;}
+    .badge-roof{background:rgba(239,68,68,.2);color:#f87171;}
+    .badge-ac{background:rgba(99,102,241,.2);color:#818cf8;}
+    .badge-electric{background:rgba(245,158,11,.2);color:#fcd34d;}
+    .badge-other{background:rgba(148,163,184,.1);color:var(--muted);}
   </style>
 </head>
 <body>
 <header>
   <div>
-    <div class="logo">⚡ PermitIQ</div>
-    <div class="sub">Miami-Dade &amp; Broward — Property Permit Intelligence</div>
+    <div class="logo">&#9889; PermitIQ</div>
+    <div class="sub">Miami-Dade &amp; Broward &mdash; Property Permit Intelligence</div>
   </div>
 </header>
-
 <main>
   <div class="search-card">
-    <h2>Búsqueda de Propiedad</h2>
-    <div class="form-grid">
-      <div class="full">
-        <label>Dirección *</label>
-        <input id="address" placeholder="123 Main St" />
+    <div class="row">
+      <div style="flex:1">
+        <label>Direccion</label>
+        <input id="address" placeholder="1234 NW 7th St" autocomplete="off" />
       </div>
-      <div>
-        <label>Ciudad</label>
-        <input id="city" placeholder="Miami" />
+      <div style="width:110px">
+        <label>ZIP (opcional)</label>
+        <input id="zip" placeholder="33301" maxlength="5" />
       </div>
-      <div>
-        <label>ZIP Code</label>
-        <input id="zip" placeholder="33101" maxlength="5" />
-      </div>
-      <div>
-        <label>Folio (opcional)</label>
-        <input id="folio" placeholder="3022200020740" />
-      </div>
-      <div>
-        <label>GHL Contact ID (opcional)</label>
-        <input id="contactId" placeholder="Rj8xKm..." />
+      <div style="display:flex;align-items:flex-end">
+        <button class="btn btn-primary" id="searchBtn" onclick="runSearch()">Buscar</button>
       </div>
     </div>
-    <br />
-    <button class="btn btn-primary" id="searchBtn" onclick="runSearch()">🔍 Buscar Permisos</button>
+    <div id="ghlRow" style="display:none;margin-top:.5rem">
+      <button class="btn btn-ghl" onclick="pushToGHL()">&#8679; Enviar resultados a GoHighLevel</button>
+    </div>
+    <div style="margin-top:.5rem">
+      <input id="contactId" placeholder="GHL Contact ID (opcional)" style="font-size:.8rem;padding:.4rem .7rem;" />
+    </div>
   </div>
-
   <div id="status"></div>
   <div id="results"></div>
 </main>
-
 <script>
 let lastResult = null;
-
-function setStatus(msg, color) {
-  const el = document.getElementById('status');
-  el.textContent = msg;
-  el.style.color = color || 'var(--muted)';
-}
-
-async function runSearch() {
-  const address   = document.getElementById('address').value.trim();
-  const city      = document.getElementById('city').value.trim();
-  const zip       = document.getElementById('zip').value.trim();
-  const folio     = document.getElementById('folio').value.trim();
-  const contactId = document.getElementById('contactId').value.trim();
-
-  if (!address && !folio) { setStatus('⚠️ Ingresa una dirección o folio.', '#f59e0b'); return; }
-
-  const btn = document.getElementById('searchBtn');
-  btn.disabled = true;
-  setStatus('⏳ Consultando...');
-  document.getElementById('results').style.display = 'none';
-
-  try {
-    const res = await fetch('/api/search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ address, city, zip, folio, contactId }),
-    });
-    const data = await res.json();
-    if (!res.ok) { setStatus('❌ ' + (data.error || 'Error desconocido'), '#ef4444'); return; }
-    lastResult = data;
+function setStatus(msg,color){const e=document.getElementById('status');e.textContent=msg;e.style.color=color||'var(--muted)';}
+async function runSearch(){
+  const address=document.getElementById('address').value.trim();
+  const zip=document.getElementById('zip').value.trim();
+  if(!address){setStatus('Ingresa una direccion.','#f59e0b');return;}
+  const btn=document.getElementById('searchBtn');
+  btn.disabled=true;setStatus('Consultando...');
+  document.getElementById('results').innerHTML='';
+  document.getElementById('ghlRow').style.display='none';
+  try{
+    const body={address};
+    if(zip)body.zip=zip;
+    const res=await fetch('/api/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const data=await res.json();
+    if(!res.ok){setStatus('Error: '+(data.error||'Desconocido'),'#ef4444');return;}
+    lastResult=data;
     renderResults(data);
-    setStatus(data.ghlPushed ? '✅ Datos enviados a GoHighLevel' : '', '#22c55e');
-  } catch (e) {
-    setStatus('❌ Error de conexión: ' + e.message, '#ef4444');
-  } finally {
-    btn.disabled = false;
-  }
+    document.getElementById('ghlRow').style.display='block';
+    setStatus('');
+  }catch(e){setStatus('Error: '+e.message,'#ef4444');}
+  finally{btn.disabled=false;}
 }
-
-function fmt(v) { return v || '—'; }
-
-function renderResults(d) {
-  const { property = {}, permits = [], roofScore = {}, summary = {} } = d;
-  const scoreClass = roofScore.score || 'NO_DATA';
-
-  let html = `
-  <div class="score-banner ${scoreClass}">
+async function pushToGHL(){
+  const contactId=document.getElementById('contactId').value.trim();
+  if(!contactId){setStatus('Ingresa el GHL Contact ID primero.','#f59e0b');return;}
+  if(!lastResult){return;}
+  setStatus('Enviando a GoHighLevel...');
+  try{
+    const body={...lastResult.summary,contactId,property:lastResult.property,permits:lastResult.permits,roofScore:lastResult.roofScore};
+    const res=await fetch('/api/ghl-push',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contactId,...lastResult})});
+    const data=await res.json();
+    setStatus(data.ok?'Enviado a GHL correctamente.':'Error GHL: '+(data.error||'?'),data.ok?'#22c55e':'#ef4444');
+  }catch(e){setStatus('Error: '+e.message,'#ef4444');}
+}
+function fmt(v){return v||'&mdash;';}
+function renderResults(d){
+  const {property={},permits=[],roofScore={},summary={}}=d;
+  const sc=roofScore.score||'NO_DATA';
+  const emoji={CRITICAL:'&#128308;',WARM:'&#129681;',OK:'&#128994;',NO_DATA:'&#128995;'}[sc]||'';
+  let html=`
+  <div class="score-banner ${sc}">
     <div>
-      <div class="score-label">${roofScore.label || '🟣 SIN DATA'}</div>
+      <div class="score-label">${emoji} ${roofScore.label||'SIN DATA'}</div>
       <div class="score-meta">
-        ${roofScore.age !== null ? `Techo: hace ${roofScore.age} años` : 'Sin permisos de techo'}
-        ${roofScore.date ? ` · ${roofScore.date}` : ''}
-        ${roofScore.contractor ? ` · ${roofScore.contractor}` : ''}
+        ${roofScore.age!==null&&roofScore.age!==undefined?'Techo: hace '+roofScore.age+' anos':'Sin permisos de techo'}
+        ${roofScore.date?' &bull; '+roofScore.date:''}
+        ${roofScore.contractor?' &bull; '+roofScore.contractor:''}
       </div>
     </div>
-    <div style="text-align:right;font-size:0.8rem;color:var(--muted)">
-      ${summary.county?.toUpperCase() || ''}<br>
-      ${summary.municipality || ''}
+    <div style="text-align:right;font-size:.78rem;color:var(--muted)">
+      ${(summary.county||'').toUpperCase()}<br>${summary.municipality||''}
     </div>
   </div>
-
   <div class="info-grid">
-    <div class="info-box"><div class="lbl">Dueño</div><div class="val">${fmt(property.ownerName)}</div></div>
-    <div class="info-box"><div class="lbl">Año Construido</div><div class="val">${fmt(property.yearBuilt)}</div></div>
-    <div class="info-box"><div class="lbl">Área (sqft)</div><div class="val">${property.sqft ? Number(property.sqft).toLocaleString() : '—'}</div></div>
-    <div class="info-box"><div class="lbl">Valor Tasado</div><div class="val">${property.assessedValue ? '$' + Number(property.assessedValue).toLocaleString() : '—'}</div></div>
-    <div class="info-box"><div class="lbl">Homestead</div><div class="val">${property.homestead ? '✅ Sí' : '❌ No'}</div></div>
-    <div class="info-box"><div class="lbl">Folio</div><div class="val" style="font-size:.78rem">${fmt(property.folio)}</div></div>
-    <div class="info-box" style="grid-column: 1/-1"><div class="lbl">Dirección Postal Dueño</div><div class="val" style="font-size:.83rem">${fmt(property.ownerMailing)}</div></div>
-  </div>
-  `;
-
-  if (permits.length === 0) {
-    html += `<div style="text-align:center;padding:2rem;color:var(--muted);font-size:.9rem">
-      Sin permisos encontrados · ${summary.querySource || ''}
-    </div>`;
-  } else {
-    html += `
-    <div class="permits-card">
-      <h3>Permisos (${permits.length}) · ${summary.querySource || ''}</h3>
-      <table>
-        <thead><tr>
-          <th>Tipo</th><th>Descripción</th><th>Fecha</th><th>Estado</th><th>Contratista</th>
-        </tr></thead>
-        <tbody>
-          ${permits.map(p => {
-            const cat = p._category || 'other';
-            const badgeClass = `badge badge-${cat}`;
-            const catLabel = cat === 'roof' ? '🏠 TECHO' : cat === 'ac' ? '❄️ A/C' : cat === 'electric' ? '⚡ ELÉC' : 'OTRO';
-            return `<tr>
-              <td><span class="${badgeClass}">${catLabel}</span><br><span style="font-size:.75rem;color:var(--muted)">${fmt(p.type)}</span></td>
-              <td style="max-width:240px;font-size:.8rem">${fmt(p.description)}</td>
-              <td style="white-space:nowrap">${fmt(p.date)}</td>
-              <td style="font-size:.78rem">${fmt(p.status)}</td>
-              <td style="font-size:.78rem">${fmt(p.contractor)}</td>
-            </tr>`;
-          }).join('')}
-        </tbody>
-      </table>
-    </div>`;
+    <div class="info-box"><div class="lbl">Dueno</div><div class="val">${fmt(property.ownerName)}</div></div>
+    <div class="info-box"><div class="lbl">Ano Construido</div><div class="val">${fmt(property.yearBuilt)}</div></div>
+    <div class="info-box"><div class="lbl">Area (sqft)</div><div class="val">${property.sqft?Number(property.sqft).toLocaleString():'&mdash;'}</div></div>
+    <div class="info-box"><div class="lbl">Valor Tasado</div><div class="val">${property.assessedValue?'$'+Number(property.assessedValue).toLocaleString():'&mdash;'}</div></div>
+    <div class="info-box"><div class="lbl">Homestead</div><div class="val">${property.homestead?'Si':'No'}</div></div>
+    <div class="info-box"><div class="lbl">Folio</div><div class="val" style="font-size:.76rem">${fmt(property.folio)}</div></div>
+    <div class="info-box" style="grid-column:1/-1"><div class="lbl">Direccion Postal Dueno</div><div class="val" style="font-size:.82rem">${fmt(property.ownerMailing)}</div></div>
+  </div>`;
+  if(!permits.length){
+    html+=`<div style="text-align:center;padding:2rem;color:var(--muted);font-size:.9rem">Sin permisos encontrados &bull; ${summary.querySource||''}</div>`;
+  }else{
+    const catLabel={roof:'TECHO',ac:'A/C',electric:'ELEC',other:'OTRO'};
+    html+=`<div class="permits-card"><h3>Permisos (${permits.length}) &bull; ${summary.querySource||''}</h3>
+    <table><thead><tr><th>Tipo</th><th>Descripcion</th><th>Fecha</th><th>Estado</th><th>Contratista</th></tr></thead><tbody>
+    ${permits.map(p=>{
+      const cat=p._category||'other';
+      return `<tr>
+        <td><span class="badge badge-${cat}">${catLabel[cat]||'OTRO'}</span><br><span style="font-size:.73rem;color:var(--muted)">${p.type||''}</span></td>
+        <td style="max-width:230px;font-size:.79rem">${p.description||'&mdash;'}</td>
+        <td style="white-space:nowrap">${p.date||'&mdash;'}</td>
+        <td style="font-size:.76rem">${p.status||'&mdash;'}</td>
+        <td style="font-size:.76rem">${p.contractor||'&mdash;'}</td>
+      </tr>`;
+    }).join('')}
+    </tbody></table></div>`;
   }
-
-  const resultsEl = document.getElementById('results');
-  resultsEl.innerHTML = html;
-  resultsEl.style.display = 'block';
+  const el=document.getElementById('results');
+  el.innerHTML=html;el.style.display='block';
 }
-
-// Allow Enter key
-document.addEventListener('keydown', e => {
-  if (e.key === 'Enter') runSearch();
-});
+document.addEventListener('keydown',e=>{if(e.key==='Enter')runSearch();});
 </script>
 </body>
 </html>
