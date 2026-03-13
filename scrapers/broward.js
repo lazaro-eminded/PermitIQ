@@ -1,128 +1,103 @@
 /**
  * scrapers/broward.js
- *
- * Steps:
- *  1. FDOT Statewide Parcels FeatureServer (Layer 6 = Broward)
- *     → owner, year built, sqft, assessed value, homestead
- *  2. Fort Lauderdale BuildingPermitTracker ArcGIS (by PARCELID)
- *     → permits for Fort Lauderdale addresses only; empty array for rest
- *  3. Categorize + score permits
  */
 
-// ── FDOT Parcel layer for Broward ────────────────────────────────────────────
-const FDOT_URL = 'https://gis.fdot.gov/arcgis/rest/services/Parcels/FeatureServer/6/query';
+const FDOT_BASE = 'https://gis.fdot.gov/arcgis/rest/services/Parcels/FeatureServer/6/query';
+const FDOT_FIELDS = 'PARCEL_ID,OWN_NAME,OWN_ADDR1,OWN_ADDR2,OWN_CITY,OWN_STATE,OWN_ZIPCD,PHY_ADDR1,PHY_CITY,PHY_ZIPCD,ACT_YR_BLT,TOT_LVG_AR,JV,JV_HMSTD';
 
-const FDOT_FIELDS = [
-  'PARCEL_ID','OWN_NAME',
-  'OWN_ADDR1','OWN_ADDR2','OWN_CITY','OWN_STATE','OWN_ZIPCD',
-  'PHY_ADDR1','PHY_ADDR2','PHY_CITY','PHY_ZIPCD',
-  'ACT_YR_BLT','TOT_LVG_AR','JV','JV_HMSTD',
-].join(',');
+// Build FDOT URL manually so the % in LIKE is NOT double-encoded by URLSearchParams
+function buildFDOTUrl(where) {
+  const others = new URLSearchParams({
+    outFields:          FDOT_FIELDS,
+    returnGeometry:     'false',
+    resultRecordCount:  '10',
+    f:                  'json',
+  }).toString();
+  return `${FDOT_BASE}?where=${encodeURIComponent(where)}&${others}`;
+}
 
-/**
- * searchFDOTByAddress(address)
- * Searches physical address (PHY_ADDR1) using LIKE query.
- * Returns array of matching parcel records.
- */
 async function searchFDOTByAddress(address) {
-  // Normalise: uppercase, trim to street number + first word of street name
+  // Uppercase and take first 20 chars for LIKE prefix
   const upper  = address.toUpperCase().trim();
-  // Use first ~15 chars to keep the LIKE broad but not too broad
-  const prefix = upper.substring(0, 15).replace(/'/g, "''");
-  const params = new URLSearchParams({
-    where:            `UPPER(PHY_ADDR1) LIKE '${prefix}%'`,
-    outFields:        FDOT_FIELDS,
-    returnGeometry:   false,
-    resultRecordCount: 10,
-    f:                'json',
-  });
-  const res = await fetch(`${FDOT_URL}?${params}`, { headers: { 'User-Agent': 'PermitIQ/1.0' } });
-  if (!res.ok) return [];
+  const prefix = upper.substring(0, 20).replace(/'/g, "''");
+  const url    = buildFDOTUrl(`UPPER(PHY_ADDR1) LIKE '${prefix}%'`);
+  console.log('[FDOT] address query:', url.substring(0, 200));
+  const res  = await fetch(url, { headers: { 'User-Agent': 'PermitIQ/1.0' } });
+  if (!res.ok) { console.error('[FDOT] HTTP', res.status); return []; }
   const data = await res.json();
+  if (data.error) { console.error('[FDOT] error:', JSON.stringify(data.error)); return []; }
   return (data.features || []).map(f => f.attributes || {});
 }
 
-/**
- * searchFDOTByParcel(parcelId)
- * Exact lookup by PARCEL_ID (Broward 12-digit folio).
- */
 async function searchFDOTByParcel(parcelId) {
   const pid = String(parcelId).replace(/\D/g, '');
-  const params = new URLSearchParams({
-    where:            `PARCEL_ID='${pid}'`,
-    outFields:        FDOT_FIELDS,
-    returnGeometry:   false,
-    resultRecordCount: 5,
-    f:                'json',
-  });
-  const res = await fetch(`${FDOT_URL}?${params}`, { headers: { 'User-Agent': 'PermitIQ/1.0' } });
+  const url = buildFDOTUrl(`PARCEL_ID='${pid}'`);
+  const res  = await fetch(url, { headers: { 'User-Agent': 'PermitIQ/1.0' } });
   if (!res.ok) return [];
   const data = await res.json();
   return (data.features || []).map(f => f.attributes || {});
 }
 
 function parseFDOT(attr) {
+  const zip = attr.OWN_ZIPCD ? String(Math.round(attr.OWN_ZIPCD)).padStart(5, '0') : '';
   const mailingParts = [
-    attr.OWN_ADDR1, attr.OWN_ADDR2, attr.OWN_CITY, attr.OWN_STATE,
-    attr.OWN_ZIPCD ? String(Math.round(attr.OWN_ZIPCD)).padStart(5, '0') : '',
+    attr.OWN_ADDR1, attr.OWN_ADDR2, attr.OWN_CITY,
+    attr.OWN_STATE, zip,
   ].filter(Boolean);
-
   return {
-    folio:          attr.PARCEL_ID || '',
-    ownerName:      attr.OWN_NAME  || '',
-    municipality:   attr.PHY_CITY  || 'Broward County',
-    yearBuilt:      attr.ACT_YR_BLT || '',
-    sqft:           attr.TOT_LVG_AR  || '',
-    assessedValue:  attr.JV          || '',
-    homestead:      !!(attr.JV_HMSTD && attr.JV_HMSTD > 0),
-    ownerMailing:   mailingParts.join(', '),
-    address:        [attr.PHY_ADDR1, attr.PHY_CITY, 'FL'].filter(Boolean).join(', '),
+    folio:         attr.PARCEL_ID || '',
+    ownerName:     attr.OWN_NAME  || '',
+    municipality:  attr.PHY_CITY  || 'Broward County',
+    yearBuilt:     attr.ACT_YR_BLT || '',
+    sqft:          attr.TOT_LVG_AR  || '',
+    assessedValue: attr.JV          || '',
+    homestead:     !!(attr.JV_HMSTD && attr.JV_HMSTD > 0),
+    ownerMailing:  mailingParts.join(', '),
+    address:       [attr.PHY_ADDR1, attr.PHY_CITY, 'FL'].filter(Boolean).join(', '),
   };
 }
 
-// ── Fort Lauderdale BuildingPermitTracker ────────────────────────────────────
-const FTL_URL =
-  'https://gis.fortlauderdale.gov/arcgis/rest/services/BuildingPermitTracker/BuildingPermitTracker/MapServer/0/query';
+// Fort Lauderdale BuildingPermitTracker
+const FTL_BASE = 'https://gis.fortlauderdale.gov/arcgis/rest/services/BuildingPermitTracker/BuildingPermitTracker/MapServer/0/query';
 
 async function getFtlPermits(parcelId) {
   const pid = String(parcelId).replace(/\D/g, '');
   const params = new URLSearchParams({
-    where:            `PARCELID='${pid}'`,
-    outFields:        'PERMITID,PERMITTYPE,PERMITSTAT,PERMITDESC,APPROVEDT,CONTRACTOR,FULLADDR,ESTCOST',
-    orderByFields:    'APPROVEDT DESC',
-    resultRecordCount: 200,
-    f:                'json',
+    where:             `PARCELID='${pid}'`,
+    outFields:         'PERMITID,PERMITTYPE,PERMITSTAT,PERMITDESC,APPROVEDT,CONTRACTOR,FULLADDR,ESTCOST',
+    orderByFields:     'APPROVEDT DESC',
+    resultRecordCount: '200',
+    f:                 'json',
   });
-  const res = await fetch(`${FTL_URL}?${params}`, { headers: { 'User-Agent': 'PermitIQ/1.0' } });
+  const res  = await fetch(`${FTL_BASE}?${params}`, { headers: { 'User-Agent': 'PermitIQ/1.0' } });
   if (!res.ok) return [];
   const data = await res.json();
-  return (data.features || []).map(f => {
-    const a = f.attributes || {};
-    const ms = a.APPROVEDT;
-    const date = ms ? new Date(ms).toISOString().slice(0, 10) : '';
+  return (data.features || []).map(feat => {
+    const a    = feat.attributes || {};
+    const date = a.APPROVEDT ? new Date(a.APPROVEDT).toISOString().slice(0, 10) : '';
     return {
-      permitNumber: a.PERMITID   || '',
-      type:         a.PERMITTYPE || '',
-      description:  a.PERMITDESC || '',
+      permitNumber:  a.PERMITID   || '',
+      type:          a.PERMITTYPE || '',
+      description:   a.PERMITDESC || '',
       date,
-      status:       a.PERMITSTAT || '',
-      contractor:   a.CONTRACTOR || '',
-      address:      a.FULLADDR   || '',
-      estimatedCost: a.ESTCOST   || 0,
+      status:        a.PERMITSTAT || '',
+      contractor:    a.CONTRACTOR || '',
+      address:       a.FULLADDR   || '',
+      estimatedCost: a.ESTCOST    || 0,
     };
   });
 }
 
-// ── Permit categorization ─────────────────────────────────────────────────────
-const ROOF_KEYWORDS     = /\b(roof|roofing|reroof|re-roof|shingle|tile roof|flat roof|metal roof)\b/i;
-const AC_KEYWORDS       = /\b(a\/c|ac|air.cond|hvac|mechanical|heat pump|mini.split|condenser)\b/i;
-const ELECTRIC_KEYWORDS = /\b(electr|wiring|panel|service.change|meter|generator)\b/i;
+const ROOF_KW = /\b(roof|roofing|reroof|re-roof|shingle|tile roof|flat roof|metal roof)\b/i;
+const AC_KW   = /\b(a\/c|ac|air.cond|hvac|mechanical|heat pump|mini.split|condenser)\b/i;
+const ELEC_KW = /\b(electr|wiring|panel|service.change|meter|generator)\b/i;
+const FTL_RE  = /fort.?lauderdale|ft.?laud/i;
 
-function categorize(permit) {
-  const text = `${permit.type} ${permit.description}`;
-  if (ROOF_KEYWORDS.test(text))     return 'roof';
-  if (AC_KEYWORDS.test(text))       return 'ac';
-  if (ELECTRIC_KEYWORDS.test(text)) return 'electric';
+function categorize(p) {
+  const t = `${p.type} ${p.description}`;
+  if (ROOF_KW.test(t)) return 'roof';
+  if (AC_KW.test(t))   return 'ac';
+  if (ELEC_KW.test(t)) return 'electric';
   return 'other';
 }
 
@@ -134,78 +109,61 @@ function yearsSince(dateStr) {
 }
 
 function scoreRoof(permits) {
-  const roofPerms = permits.filter(p => p._category === 'roof');
-  if (!roofPerms.length) {
-    return { score: 'NO_DATA', label: '🟣 SIN DATA', age: null, date: '', contractor: '', permitNumber: '' };
-  }
-  const latest = roofPerms[0];
-  const age    = yearsSince(latest.date);
+  const rp = permits.filter(p => p._category === 'roof');
+  if (!rp.length) return { score: 'NO_DATA', label: 'SIN DATA', age: null, date: '', contractor: '', permitNumber: '' };
+  const l = rp[0];
+  const age = yearsSince(l.date);
   let score, label;
-  if (age === null)   { score = 'NO_DATA'; label = '🟣 SIN DATA'; }
-  else if (age >= 20) { score = 'CRITICAL'; label = '🔴 CRÍTICO — Hot Lead'; }
-  else if (age >= 10) { score = 'WARM';     label = '🟡 ATENCIÓN — Warm'; }
-  else                { score = 'OK';       label = '🟢 OK — Cold'; }
-  return { score, label, age, date: latest.date, contractor: latest.contractor, permitNumber: latest.permitNumber };
+  if (age === null)   { score = 'NO_DATA';  label = 'SIN DATA'; }
+  else if (age >= 20) { score = 'CRITICAL'; label = 'CRITICO - Hot Lead'; }
+  else if (age >= 10) { score = 'WARM';     label = 'ATENCION - Warm'; }
+  else                { score = 'OK';       label = 'OK - Cold'; }
+  return { score, label, age, date: l.date, contractor: l.contractor, permitNumber: l.permitNumber };
 }
 
-// ── Determine if address is in Fort Lauderdale ───────────────────────────────
-const FTL_ALIASES = /fort.?lauderdale|ft.?laud/i;
-
-function isFortLauderdale(city) {
-  return FTL_ALIASES.test(city || '');
+// Strip street-level address: just "NUMBER DIRECTION STREET" without city/state/zip
+function toStreetOnly(address) {
+  return address
+    .replace(/,\s*(fort.?lauderdale|ft.?laud|hollywood|miramar|pembroke|coral springs|pompano|davie|plantation|sunrise|weston|deerfield|lauder|tamarac|hallandale|dania|cooper|coconut|parkland|margate|north lauderdale|oakland park).*/i, '')
+    .replace(/,?\s*(fl|florida)\s*\d{5}(-\d{4})?/i, '')
+    .replace(/,\s*\d{5}(-\d{4})?$/, '')
+    .trim()
+    .toUpperCase();
 }
 
-// ── Main export ──────────────────────────────────────────────────────────────
 async function scrapeBroward({ address, folio: folioInput }) {
-  let property = {};
   let parcelId = folioInput || null;
+  let property = {};
 
-  // ── Step 1: FDOT parcel lookup ─────────────────────────────────────────
   let fdotRecords = [];
   if (parcelId) {
     fdotRecords = await searchFDOTByParcel(parcelId);
   } else {
-    fdotRecords = await searchFDOTByAddress(address);
+    const streetOnly = toStreetOnly(address);
+    fdotRecords = await searchFDOTByAddress(streetOnly);
   }
 
-  if (fdotRecords.length === 0) {
+  if (!fdotRecords.length) {
     throw new Error('Propiedad no encontrada en Broward (FDOT Parcels)');
   }
 
   property = parseFDOT(fdotRecords[0]);
   parcelId = property.folio || parcelId;
 
-  // ── Step 2: Permits ────────────────────────────────────────────────────
-  let rawPermits  = [];
-  let querySource = '';
-
-  if (isFortLauderdale(property.municipality)) {
+  let rawPermits = [], querySource = '';
+  if (FTL_RE.test(property.municipality)) {
     rawPermits  = await getFtlPermits(parcelId);
     querySource = 'Fort Lauderdale BuildingPermitTracker';
   } else {
-    // No public permit API for other Broward cities — return empty
-    querySource = `No portal de permisos disponible para ${property.municipality}`;
+    querySource = `Sin portal de permisos para ${property.municipality}`;
   }
 
-  // ── Step 3: Annotate ───────────────────────────────────────────────────
-  const permits = rawPermits.map(p => ({
-    ...p,
-    _category: categorize(p),
-    _age:      yearsSince(p.date),
-  }));
-
-  const roofScore = scoreRoof(permits);
-
+  const permits = rawPermits.map(p => ({ ...p, _category: categorize(p), _age: yearsSince(p.date) }));
   return {
     property,
     permits,
-    roofScore,
-    summary: {
-      county:      'broward',
-      municipality: property.municipality,
-      totalFound:  permits.length,
-      querySource,
-    },
+    roofScore:  scoreRoof(permits),
+    summary: { county: 'broward', municipality: property.municipality, totalFound: permits.length, querySource },
   };
 }
 
