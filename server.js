@@ -8,6 +8,7 @@ app.use(express.json());
 app.use(express.static('frontend'));
 
 app.post('/api/search',      require('./routes/search'));
+app.get('/api/debug/:type',  require('./routes/debug'));
 app.post('/api/webhook/ghl', require('./routes/ghl-webhook'));
 app.post('/api/bulk-upload', require('./routes/bulk-upload'));
 
