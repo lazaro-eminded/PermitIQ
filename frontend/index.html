@@ -1,9 +1,9 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PermitIQ â€” Consulta de Permisos</title>
+  <title>PermitIQ — Consulta de Permisos</title>
   <style>
     :root {
       --bg:      #0f1117;
@@ -21,7 +21,7 @@
     body {
       background: var(--bg);
       color: var(--text);
-      font-family: ''Segoe UI'', system-ui, sans-serif;
+      font-family: 'Segoe UI', system-ui, sans-serif;
       min-height: 100vh;
     }
     header {
@@ -165,17 +165,17 @@
 <body>
 <header>
   <div>
-    <div class="logo">âš¡ PermitIQ</div>
-    <div class="sub">Miami-Dade &amp; Broward â€” Property Permit Intelligence</div>
+    <div class="logo">⚡ PermitIQ</div>
+    <div class="sub">Miami-Dade &amp; Broward — Property Permit Intelligence</div>
   </div>
 </header>
 
 <main>
   <div class="search-card">
-    <h2>BÃºsqueda de Propiedad</h2>
+    <h2>Búsqueda de Propiedad</h2>
     <div class="form-grid">
       <div class="full">
-        <label>DirecciÃ³n *</label>
+        <label>Dirección *</label>
         <input id="address" placeholder="123 Main St" />
       </div>
       <div>
@@ -196,7 +196,7 @@
       </div>
     </div>
     <br />
-    <button class="btn btn-primary" id="searchBtn" onclick="runSearch()">ðŸ” Buscar Permisos</button>
+    <button class="btn btn-primary" id="searchBtn" onclick="runSearch()">🔍 Buscar Permisos</button>
   </div>
 
   <div id="status"></div>
@@ -207,93 +207,93 @@
 let lastResult = null;
 
 function setStatus(msg, color) {
-  const el = document.getElementById(''status'');
+  const el = document.getElementById('status');
   el.textContent = msg;
-  el.style.color = color || ''var(--muted)'';
+  el.style.color = color || 'var(--muted)';
 }
 
 async function runSearch() {
-  const address   = document.getElementById(''address'').value.trim();
-  const city      = document.getElementById(''city'').value.trim();
-  const zip       = document.getElementById(''zip'').value.trim();
-  const folio     = document.getElementById(''folio'').value.trim();
-  const contactId = document.getElementById(''contactId'').value.trim();
+  const address   = document.getElementById('address').value.trim();
+  const city      = document.getElementById('city').value.trim();
+  const zip       = document.getElementById('zip').value.trim();
+  const folio     = document.getElementById('folio').value.trim();
+  const contactId = document.getElementById('contactId').value.trim();
 
-  if (!address && !folio) { setStatus(''âš ï¸ Ingresa una direcciÃ³n o folio.'', ''#f59e0b''); return; }
+  if (!address && !folio) { setStatus('⚠️ Ingresa una dirección o folio.', '#f59e0b'); return; }
 
-  const btn = document.getElementById(''searchBtn'');
+  const btn = document.getElementById('searchBtn');
   btn.disabled = true;
-  setStatus(''â³ Consultando...'');
-  document.getElementById(''results'').style.display = ''none'';
+  setStatus('⏳ Consultando...');
+  document.getElementById('results').style.display = 'none';
 
   try {
-    const res = await fetch(''/api/search'', {
-      method: ''POST'',
-      headers: { ''Content-Type'': ''application/json'' },
+    const res = await fetch('/api/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ address, city, zip, folio, contactId }),
     });
     const data = await res.json();
-    if (!res.ok) { setStatus(''âŒ '' + (data.error || ''Error desconocido''), ''#ef4444''); return; }
+    if (!res.ok) { setStatus('❌ ' + (data.error || 'Error desconocido'), '#ef4444'); return; }
     lastResult = data;
     renderResults(data);
-    setStatus(data.ghlPushed ? ''âœ… Datos enviados a GoHighLevel'' : '''', ''#22c55e'');
+    setStatus(data.ghlPushed ? '✅ Datos enviados a GoHighLevel' : '', '#22c55e');
   } catch (e) {
-    setStatus(''âŒ Error de conexiÃ³n: '' + e.message, ''#ef4444'');
+    setStatus('❌ Error de conexión: ' + e.message, '#ef4444');
   } finally {
     btn.disabled = false;
   }
 }
 
-function fmt(v) { return v || ''â€”''; }
+function fmt(v) { return v || '—'; }
 
 function renderResults(d) {
   const { property = {}, permits = [], roofScore = {}, summary = {} } = d;
-  const scoreClass = roofScore.score || ''NO_DATA'';
+  const scoreClass = roofScore.score || 'NO_DATA';
 
   let html = `
   <div class="score-banner ${scoreClass}">
     <div>
-      <div class="score-label">${roofScore.label || ''ðŸŸ£ SIN DATA''}</div>
+      <div class="score-label">${roofScore.label || '🟣 SIN DATA'}</div>
       <div class="score-meta">
-        ${roofScore.age !== null ? `Techo: hace ${roofScore.age} aÃ±os` : ''Sin permisos de techo''}
-        ${roofScore.date ? ` Â· ${roofScore.date}` : ''''}
-        ${roofScore.contractor ? ` Â· ${roofScore.contractor}` : ''''}
+        ${roofScore.age !== null ? `Techo: hace ${roofScore.age} años` : 'Sin permisos de techo'}
+        ${roofScore.date ? ` · ${roofScore.date}` : ''}
+        ${roofScore.contractor ? ` · ${roofScore.contractor}` : ''}
       </div>
     </div>
     <div style="text-align:right;font-size:0.8rem;color:var(--muted)">
-      ${summary.county?.toUpperCase() || ''''}<br>
-      ${summary.municipality || ''''}
+      ${summary.county?.toUpperCase() || ''}<br>
+      ${summary.municipality || ''}
     </div>
   </div>
 
   <div class="info-grid">
-    <div class="info-box"><div class="lbl">DueÃ±o</div><div class="val">${fmt(property.ownerName)}</div></div>
-    <div class="info-box"><div class="lbl">AÃ±o Construido</div><div class="val">${fmt(property.yearBuilt)}</div></div>
-    <div class="info-box"><div class="lbl">Ãrea (sqft)</div><div class="val">${property.sqft ? Number(property.sqft).toLocaleString() : ''â€”''}</div></div>
-    <div class="info-box"><div class="lbl">Valor Tasado</div><div class="val">${property.assessedValue ? ''$'' + Number(property.assessedValue).toLocaleString() : ''â€”''}</div></div>
-    <div class="info-box"><div class="lbl">Homestead</div><div class="val">${property.homestead ? ''âœ… SÃ­'' : ''âŒ No''}</div></div>
+    <div class="info-box"><div class="lbl">Dueño</div><div class="val">${fmt(property.ownerName)}</div></div>
+    <div class="info-box"><div class="lbl">Año Construido</div><div class="val">${fmt(property.yearBuilt)}</div></div>
+    <div class="info-box"><div class="lbl">Área (sqft)</div><div class="val">${property.sqft ? Number(property.sqft).toLocaleString() : '—'}</div></div>
+    <div class="info-box"><div class="lbl">Valor Tasado</div><div class="val">${property.assessedValue ? '$' + Number(property.assessedValue).toLocaleString() : '—'}</div></div>
+    <div class="info-box"><div class="lbl">Homestead</div><div class="val">${property.homestead ? '✅ Sí' : '❌ No'}</div></div>
     <div class="info-box"><div class="lbl">Folio</div><div class="val" style="font-size:.78rem">${fmt(property.folio)}</div></div>
-    <div class="info-box" style="grid-column: 1/-1"><div class="lbl">DirecciÃ³n Postal DueÃ±o</div><div class="val" style="font-size:.83rem">${fmt(property.ownerMailing)}</div></div>
+    <div class="info-box" style="grid-column: 1/-1"><div class="lbl">Dirección Postal Dueño</div><div class="val" style="font-size:.83rem">${fmt(property.ownerMailing)}</div></div>
   </div>
   `;
 
   if (permits.length === 0) {
     html += `<div style="text-align:center;padding:2rem;color:var(--muted);font-size:.9rem">
-      Sin permisos encontrados Â· ${summary.querySource || ''''}
+      Sin permisos encontrados · ${summary.querySource || ''}
     </div>`;
   } else {
     html += `
     <div class="permits-card">
-      <h3>Permisos (${permits.length}) Â· ${summary.querySource || ''''}</h3>
+      <h3>Permisos (${permits.length}) · ${summary.querySource || ''}</h3>
       <table>
         <thead><tr>
-          <th>Tipo</th><th>DescripciÃ³n</th><th>Fecha</th><th>Estado</th><th>Contratista</th>
+          <th>Tipo</th><th>Descripción</th><th>Fecha</th><th>Estado</th><th>Contratista</th>
         </tr></thead>
         <tbody>
           ${permits.map(p => {
-            const cat = p._category || ''other'';
+            const cat = p._category || 'other';
             const badgeClass = `badge badge-${cat}`;
-            const catLabel = cat === ''roof'' ? ''ðŸ  TECHO'' : cat === ''ac'' ? ''â„ï¸ A/C'' : cat === ''electric'' ? ''âš¡ ELÃ‰C'' : ''OTRO'';
+            const catLabel = cat === 'roof' ? '🏠 TECHO' : cat === 'ac' ? '❄️ A/C' : cat === 'electric' ? '⚡ ELÉC' : 'OTRO';
             return `<tr>
               <td><span class="${badgeClass}">${catLabel}</span><br><span style="font-size:.75rem;color:var(--muted)">${fmt(p.type)}</span></td>
               <td style="max-width:240px;font-size:.8rem">${fmt(p.description)}</td>
@@ -301,22 +301,21 @@ function renderResults(d) {
               <td style="font-size:.78rem">${fmt(p.status)}</td>
               <td style="font-size:.78rem">${fmt(p.contractor)}</td>
             </tr>`;
-          }).join('''')}
+          }).join('')}
         </tbody>
       </table>
     </div>`;
   }
 
-  const resultsEl = document.getElementById(''results'');
+  const resultsEl = document.getElementById('results');
   resultsEl.innerHTML = html;
-  resultsEl.style.display = ''block'';
+  resultsEl.style.display = 'block';
 }
 
 // Allow Enter key
-document.addEventListener(''keydown'', e => {
-  if (e.key === ''Enter'') runSearch();
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter') runSearch();
 });
 </script>
 </body>
 </html>
-

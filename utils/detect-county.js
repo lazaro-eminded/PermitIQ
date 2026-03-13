@@ -1,4 +1,4 @@
-﻿/**
+/**
  * detect-county.js
  * Detects Florida county from ZIP code and/or city name.
  */
@@ -37,50 +37,50 @@ const PALM_BEACH_ZIPS = new Set([
 
 const CITY_COUNTY_MAP = {
   // Miami-Dade cities
-  ''miami'': ''miami-dade'', ''city of miami'': ''miami-dade'',
-  ''miami beach'': ''miami-dade'', ''hialeah'': ''miami-dade'',
-  ''coral gables'': ''miami-dade'', ''homestead'': ''miami-dade'',
-  ''north miami'': ''miami-dade'', ''north miami beach'': ''miami-dade'',
-  ''miami gardens'': ''miami-dade'', ''miami shores'': ''miami-dade'',
-  ''miami lakes'': ''miami-dade'', ''doral'': ''miami-dade'',
-  ''aventura'': ''miami-dade'', ''cutler bay'': ''miami-dade'',
-  ''florida city'': ''miami-dade'', ''key biscayne'': ''miami-dade'',
-  ''medley'': ''miami-dade'', ''miami springs'': ''miami-dade'',
-  ''opa-locka'': ''miami-dade'', ''opa locka'': ''miami-dade'',
-  ''palmetto bay'': ''miami-dade'', ''pinecrest'': ''miami-dade'',
-  ''south miami'': ''miami-dade'', ''sunny isles beach'': ''miami-dade'',
-  ''surfside'': ''miami-dade'', ''sweetwater'': ''miami-dade'',
-  ''west miami'': ''miami-dade'', ''kendall'': ''miami-dade'',
-  ''unincorporated county'': ''miami-dade'',
+  'miami': 'miami-dade', 'city of miami': 'miami-dade',
+  'miami beach': 'miami-dade', 'hialeah': 'miami-dade',
+  'coral gables': 'miami-dade', 'homestead': 'miami-dade',
+  'north miami': 'miami-dade', 'north miami beach': 'miami-dade',
+  'miami gardens': 'miami-dade', 'miami shores': 'miami-dade',
+  'miami lakes': 'miami-dade', 'doral': 'miami-dade',
+  'aventura': 'miami-dade', 'cutler bay': 'miami-dade',
+  'florida city': 'miami-dade', 'key biscayne': 'miami-dade',
+  'medley': 'miami-dade', 'miami springs': 'miami-dade',
+  'opa-locka': 'miami-dade', 'opa locka': 'miami-dade',
+  'palmetto bay': 'miami-dade', 'pinecrest': 'miami-dade',
+  'south miami': 'miami-dade', 'sunny isles beach': 'miami-dade',
+  'surfside': 'miami-dade', 'sweetwater': 'miami-dade',
+  'west miami': 'miami-dade', 'kendall': 'miami-dade',
+  'unincorporated county': 'miami-dade',
   // Broward cities
-  ''fort lauderdale'': ''broward'', ''ft lauderdale'': ''broward'',
-  ''hollywood'': ''broward'', ''pembroke pines'': ''broward'',
-  ''miramar'': ''broward'', ''coral springs'': ''broward'',
-  ''pompano beach'': ''broward'', ''davie'': ''broward'',
-  ''plantation'': ''broward'', ''sunrise'': ''broward'',
-  ''weston'': ''broward'', ''deerfield beach'': ''broward'',
-  ''lauderhill'': ''broward'', ''margate'': ''broward'',
-  ''north lauderdale'': ''broward'', ''oakland park'': ''broward'',
-  ''tamarac'': ''broward'', ''hallandale beach'': ''broward'',
-  ''dania beach'': ''broward'', ''cooper city'': ''broward'',
-  ''coconut creek'': ''broward'', ''lighthouse point'': ''broward'',
-  ''parkland'': ''broward'', ''lauderdale lakes'': ''broward'',
+  'fort lauderdale': 'broward', 'ft lauderdale': 'broward',
+  'hollywood': 'broward', 'pembroke pines': 'broward',
+  'miramar': 'broward', 'coral springs': 'broward',
+  'pompano beach': 'broward', 'davie': 'broward',
+  'plantation': 'broward', 'sunrise': 'broward',
+  'weston': 'broward', 'deerfield beach': 'broward',
+  'lauderhill': 'broward', 'margate': 'broward',
+  'north lauderdale': 'broward', 'oakland park': 'broward',
+  'tamarac': 'broward', 'hallandale beach': 'broward',
+  'dania beach': 'broward', 'cooper city': 'broward',
+  'coconut creek': 'broward', 'lighthouse point': 'broward',
+  'parkland': 'broward', 'lauderdale lakes': 'broward',
   // Palm Beach
-  ''west palm beach'': ''palm-beach'', ''boca raton'': ''palm-beach'',
-  ''boynton beach'': ''palm-beach'', ''delray beach'': ''palm-beach'',
-  ''lake worth'': ''palm-beach'', ''wellington'': ''palm-beach'',
-  ''palm beach gardens'': ''palm-beach'', ''jupiter'': ''palm-beach'',
+  'west palm beach': 'palm-beach', 'boca raton': 'palm-beach',
+  'boynton beach': 'palm-beach', 'delray beach': 'palm-beach',
+  'lake worth': 'palm-beach', 'wellington': 'palm-beach',
+  'palm beach gardens': 'palm-beach', 'jupiter': 'palm-beach',
 };
 
-function detectCounty(zip, city = '''') {
+function detectCounty(zip, city = '') {
   const z = parseInt(zip, 10);
   if (!isNaN(z)) {
-    if (MIAMI_DADE_ZIPS.has(z)) return ''miami-dade'';
-    if (BROWARD_ZIPS.has(z))    return ''broward'';
-    if (PALM_BEACH_ZIPS.has(z)) return ''palm-beach'';
+    if (MIAMI_DADE_ZIPS.has(z)) return 'miami-dade';
+    if (BROWARD_ZIPS.has(z))    return 'broward';
+    if (PALM_BEACH_ZIPS.has(z)) return 'palm-beach';
   }
   if (city) {
-    const c = city.toLowerCase().trim().replace(/^city of /, '''');
+    const c = city.toLowerCase().trim().replace(/^city of /, '');
     if (CITY_COUNTY_MAP[c]) return CITY_COUNTY_MAP[c];
     if (CITY_COUNTY_MAP[`city of ${c}`]) return CITY_COUNTY_MAP[`city of ${c}`];
     for (const [key, county] of Object.entries(CITY_COUNTY_MAP)) {
@@ -91,4 +91,3 @@ function detectCounty(zip, city = '''') {
 }
 
 module.exports = { detectCounty };
-
