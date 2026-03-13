@@ -6,22 +6,41 @@ const { resolve } = require('../utils/jurisdictions');
 
 const PA_BASE = 'https://apps.miamidadepa.gov/PApublicServiceProxy/PaServicesProxy.ashx';
 
-function cleanAddress(address) {
+// Keep only the street portion — strip city, state, zip
+function toStreetOnly(address) {
   return address
-    .replace(/,\s*(miami[\w\s]*|hialeah|coral gables|homestead|doral|aventura|kendall|cutler bay|palmetto bay|pinecrest|surfside|sweetwater|medley|opa.?locka|florida city|key biscayne).*/i, '')
-    .replace(/,?\s*fl(orida)?\s*\d{5}(-\d{4})?/i, '')
+    .replace(/,\s*(miami[\w\s]*|hialeah|coral gables|homestead|doral|aventura|kendall|cutler bay|palmetto bay|pinecrest|surfside|sweetwater|medley|opa.?locka|florida city|key biscayne|north miami[\w\s]*|south miami|west miami).*/i, '')
+    .replace(/,?\s*(fl|florida)\s*\d{5}(-\d{4})?/i, '')
     .replace(/,\s*\d{5}(-\d{4})?$/, '')
     .trim();
 }
 
-async function searchAddress(address) {
-  const clean = cleanAddress(address);
-  console.log('[PA Search] cleaned:', clean);
-  const url = `${PA_BASE}?Operation=GetAddress&clientAppName=PropertySearch&myUnit=&from=1&to=200&myAddress=${encodeURIComponent(clean)}`;
+async function paAddressSearch(query) {
+  const url = `${PA_BASE}?Operation=GetAddress&clientAppName=PropertySearch&myUnit=&from=1&to=200&myAddress=${encodeURIComponent(query)}`;
   const res = await fetch(url, { headers: { 'User-Agent': 'PermitIQ/1.0' } });
-  if (!res.ok) throw new Error(`PA address search failed: ${res.status}`);
+  if (!res.ok) return [];
   const data = await res.json();
   return data.MinimumPropertyInfos || data.Hits || data.Results || (Array.isArray(data) ? data : []);
+}
+
+async function searchAddress(address) {
+  // Try 1: street only
+  const street = toStreetOnly(address);
+  console.log('[PA Search] attempt 1:', street);
+  let hits = await paAddressSearch(street);
+  if (hits.length) return hits;
+
+  // Try 2: just number + first word of street (e.g. "11900 SW")
+  const short = street.split(' ').slice(0, 2).join(' ');
+  if (short !== street) {
+    console.log('[PA Search] attempt 2:', short);
+    hits = await paAddressSearch(short);
+    if (hits.length) return hits;
+  }
+
+  // Try 3: original full address
+  console.log('[PA Search] attempt 3 (full):', address);
+  return await paAddressSearch(address);
 }
 
 async function getPropertyByFolio(folio) {
@@ -38,7 +57,7 @@ function pick(...vals) {
 }
 
 function parseProperty(data) {
-  console.log('[PA Raw]', JSON.stringify(data).substring(0, 600));
+  console.log('[PA Raw top keys]', Object.keys(data || {}).join(', '));
 
   const info   = data?.PropertyInfo   || data?.propertyInfo  || data?.Property || {};
   const owners = data?.OwnerInfos     || data?.ownerInfos    || data?.Owners   || [];
@@ -48,6 +67,10 @@ function parseProperty(data) {
   const owner = (Array.isArray(owners) ? owners[0] : owners) || {};
   const bldg  = (Array.isArray(bldgs)  ? bldgs[0]  : bldgs)  || {};
   const ass   = (Array.isArray(asses)  ? asses[0]  : asses)   || {};
+
+  console.log('[PA owner keys]', Object.keys(owner).join(', '));
+  console.log('[PA bldg keys]',  Object.keys(bldg).join(', '));
+  console.log('[PA ass keys]',   Object.keys(ass).join(', '));
 
   const folio = String(pick(
     info.FolioNumber, info.folioNumber, info.Folio,
@@ -117,13 +140,13 @@ async function getCountyPermits(folio) {
   return (data.features || []).map(feat => {
     const a = feat.attributes || {};
     return {
-      permitNumber: a.PROCNUM  || '',
-      type:         a.TYPE     || '',
-      description:  a.DESC1   || a.CAT1 || '',
+      permitNumber: a.PROCNUM   || '',
+      type:         a.TYPE      || '',
+      description:  a.DESC1    || a.CAT1 || '',
       date:         a.ISSUDATE ? new Date(a.ISSUDATE).toISOString().slice(0, 10) : '',
-      status:       a.BPSTATUS || '',
+      status:       a.BPSTATUS  || '',
       contractor:   a.CONTRNAME || '',
-      address:      a.ADDRESS  || '',
+      address:      a.ADDRESS   || '',
     };
   });
 }
@@ -148,7 +171,7 @@ async function getCityOfMiamiPermits(folio) {
     return {
       permitNumber: a.PermitNumber || '',
       type:         '',
-      description:  [a.ScopeofWork, a.WorkItems].filter(Boolean).join(' — '),
+      description:  [a.ScopeofWork, a.WorkItems].filter(Boolean).join(' - '),
       date:         a.IssuedDate ? new Date(a.IssuedDate).toISOString().slice(0, 10) : '',
       status:       a.BuildingPermitStatusDescription || '',
       contractor:   a.CompanyName || '',
@@ -157,10 +180,9 @@ async function getCityOfMiamiPermits(folio) {
   });
 }
 
-// Categorization
-const ROOF_KW  = /\b(roof|roofing|reroof|re-roof|shingle|tile roof|flat roof|metal roof)\b/i;
-const AC_KW    = /\b(a\/c|ac|air.cond|hvac|mechanical|heat pump|mini.split|condenser)\b/i;
-const ELEC_KW  = /\b(electr|wiring|panel|service.change|meter|generator)\b/i;
+const ROOF_KW = /\b(roof|roofing|reroof|re-roof|shingle|tile roof|flat roof|metal roof)\b/i;
+const AC_KW   = /\b(a\/c|ac|air.cond|hvac|mechanical|heat pump|mini.split|condenser)\b/i;
+const ELEC_KW = /\b(electr|wiring|panel|service.change|meter|generator)\b/i;
 
 function categorize(p) {
   const t = `${p.type} ${p.description}`;
@@ -184,9 +206,9 @@ function scoreRoof(permits) {
   const age = yearsSince(latest.date);
   let score, label;
   if (age === null)   { score = 'NO_DATA';  label = 'SIN DATA'; }
-  else if (age >= 20) { score = 'CRITICAL'; label = 'CRITICO — Hot Lead'; }
-  else if (age >= 10) { score = 'WARM';     label = 'ATENCION — Warm'; }
-  else                { score = 'OK';       label = 'OK — Cold'; }
+  else if (age >= 20) { score = 'CRITICAL'; label = 'CRITICO - Hot Lead'; }
+  else if (age >= 10) { score = 'WARM';     label = 'ATENCION - Warm'; }
+  else                { score = 'OK';       label = 'OK - Cold'; }
   return { score, label, age, date: latest.date, contractor: latest.contractor, permitNumber: latest.permitNumber };
 }
 
