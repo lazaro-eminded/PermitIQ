@@ -1,37 +1,57 @@
-﻿const { detectCounty } = require('../utils/detect-county');
-const { scrapeMiamiDade } = require('../scrapers/miami-dade');
-const { createClient } = require('@supabase/supabase-js');
-const config = require('../config');
+﻿/**
+ * routes/search.js
+ * POST /api/search
+ *
+ * Body: { address, city?, state?, zip?, folio?, contactId? }
+ *
+ * Returns: { property, permits, roofScore, summary }
+ * Optionally pushes to GHL if contactId provided.
+ */
 
-const supabase = createClient(config.SUPABASE_URL, config.SUPABASE_KEY);
+const { detectCounty }   = require(''../utils/detect-county'');
+const { scrapeMiamiDade } = require(''../scrapers/miami-dade'');
+const { scrapeBroward }   = require(''../scrapers/broward'');
+const ghl                = require(''../integrations/ghl'');
 
-module.exports = async (req, res) => {
-  const { address } = req.body;
+module.exports = async function search(req, res) {
+  const { address, city, state, zip, folio, contactId } = req.body || {};
 
-  if (!address) return res.status(400).json({ error: 'Se requiere una dirección' });
-
-  const county = detectCounty(address);
-  if (!county) return res.status(400).json({ error: 'Condado no reconocido. Por ahora se soportan: Miami-Dade, Broward, Palm Beach, Orange, Hillsborough.' });
+  if (!address && !folio) {
+    return res.status(400).json({ error: ''Se requiere address o folio.'' });
+  }
 
   try {
+    // â”€â”€ Detect county â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    const county = detectCounty(zip, city);
+
     let result;
-    if (county === 'miami-dade') result = await scrapeMiamiDade(address);
-    else return res.status(400).json({ error: `Scraper para ${county} coming soon` });
+    if (!county || county === ''miami-dade'') {
+      result = await scrapeMiamiDade({ address, folio });
+    } else if (county === ''broward'') {
+      result = await scrapeBroward({ address, folio });
+    } else {
+      return res.status(400).json({
+        error: `Condado "${county}" aÃºn no soportado. Disponibles: Miami-Dade, Broward.`,
+      });
+    }
 
-    // Guardar en Supabase
-    await supabase.from('searches').insert({
-      address,
-      county: result.county,
-      roof_age: result.roofAge,
-      roof_score: result.score,
-      permit_data: result.permits,
-      query_source: 'manual',
-    });
+    // â”€â”€ Optionally push to GHL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    if (contactId) {
+      try {
+        await ghl.pushPermitData(contactId, result);
+        result.ghlPushed = true;
+      } catch (ghlErr) {
+        console.error(''[GHL Push Error]'', ghlErr.message);
+        result.ghlPushed = false;
+        result.ghlError  = ghlErr.message;
+      }
+    }
 
-    res.json({ success: true, data: result });
+    return res.json(result);
 
   } catch (err) {
-    await supabase.from('error_logs').insert({ address, county, error_message: err.message });
-    res.status(500).json({ error: err.message });
+    console.error(''[Search Error]'', err.message);
+    return res.status(500).json({ error: err.message });
   }
 };
+

@@ -1,217 +1,322 @@
 ﻿<!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>PermitIQ</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PermitIQ â€” Consulta de Permisos</title>
   <style>
+    :root {
+      --bg:      #0f1117;
+      --card:    #1a1d27;
+      --border:  #2a2d3a;
+      --accent:  #4f8ef7;
+      --text:    #e2e8f0;
+      --muted:   #8892a4;
+      --success: #22c55e;
+      --warn:    #f59e0b;
+      --danger:  #ef4444;
+      --purple:  #a855f7;
+    }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f2f5; min-height: 100vh; padding: 20px; }
-    .container { max-width: 720px; margin: 0 auto; }
-    h1 { text-align: center; font-size: 1.8rem; color: #1a1a2e; margin-bottom: 4px; }
-    .subtitle { text-align: center; color: #666; font-size: 0.9rem; margin-bottom: 24px; }
-    .card { background: white; border-radius: 16px; padding: 24px; margin-bottom: 16px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
-    input { width: 100%; padding: 14px 16px; border: 2px solid #e0e0e0; border-radius: 10px; font-size: 1rem; outline: none; transition: border-color 0.2s; }
-    input:focus { border-color: #4361ee; }
-    .btn-search { width: 100%; padding: 14px; background: #4361ee; color: white; border: none; border-radius: 10px; font-size: 1rem; font-weight: 600; cursor: pointer; margin-top: 12px; transition: background 0.2s; }
-    .btn-search:hover { background: #3451d1; }
-    .btn-search:disabled { background: #a0aec0; cursor: not-allowed; }
-    .btn-ghl { width: 100%; padding: 14px; background: #16a34a; color: white; border: none; border-radius: 10px; font-size: 1rem; font-weight: 600; cursor: pointer; margin-top: 12px; transition: background 0.2s; }
-    .btn-ghl:hover { background: #15803d; }
-    .btn-ghl:disabled { background: #a0aec0; cursor: not-allowed; }
-    .badge { display: inline-block; padding: 6px 18px; border-radius: 20px; font-weight: 700; font-size: 1rem; color: white; margin-bottom: 16px; }
-    .badge.red    { background: #e63946; }
-    .badge.yellow { background: #f4a261; }
-    .badge.green  { background: #2a9d8f; }
-    .badge.purple { background: #7b2d8b; }
-    .section-title { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #999; margin: 16px 0 8px; }
-    .info-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 0; border-bottom: 1px solid #f5f5f5; font-size: 0.92rem; }
-    .info-row:last-child { border-bottom: none; }
-    .info-label { color: #666; }
-    .info-value { font-weight: 600; color: #1a1a2e; text-align: right; max-width: 60%; }
-    .source-note { font-size: 0.8rem; color: #888; margin-top: 10px; font-style: italic; }
-    .permit-row { background: #f8f9fa; border-radius: 8px; padding: 10px 14px; margin-bottom: 8px; font-size: 0.88rem; }
-    .permit-row.roof { border-left: 3px solid #4361ee; }
-    .permit-row.electric { border-left: 3px solid #f59e0b; }
-    .permit-row.ac { border-left: 3px solid #06b6d4; }
-    .permit-desc { font-weight: 600; color: #1a1a2e; }
-    .permit-meta { color: #666; margin-top: 3px; font-size: 0.82rem; }
-    .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.72rem; font-weight: 700; margin-left: 6px; }
-    .tag-roof    { background: #e8f0fe; color: #4361ee; }
-    .tag-electric{ background: #fef3c7; color: #d97706; }
-    .tag-ac      { background: #e0f2fe; color: #0284c7; }
-    .tag-F { background: #dcfce7; color: #16a34a; }
-    .tag-E { background: #fff7ed; color: #ea580c; }
-    .absentee-badge { background: #fef9c3; color: #854d0e; padding: 4px 10px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; }
-    .homestead-yes { color: #16a34a; font-weight: 700; }
-    .homestead-no  { color: #dc2626; font-weight: 700; }
-    .hidden { display: none; }
-    .ghl-success { background: #dcfce7; color: #16a34a; border-radius: 8px; padding: 10px 14px; font-size: 0.9rem; font-weight: 600; margin-top: 10px; text-align: center; }
-    .ghl-error   { background: #fee2e2; color: #dc2626; border-radius: 8px; padding: 10px 14px; font-size: 0.9rem; margin-top: 10px; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: ''Segoe UI'', system-ui, sans-serif;
+      min-height: 100vh;
+    }
+    header {
+      padding: 1.5rem 2rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    header .logo { font-size: 1.5rem; font-weight: 700; color: var(--accent); }
+    header .sub  { font-size: 0.85rem; color: var(--muted); }
+    main { max-width: 860px; margin: 2rem auto; padding: 0 1rem; }
+
+    /* Search card */
+    .search-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+    .search-card h2 { font-size: 1rem; color: var(--muted); margin-bottom: 1rem; text-transform: uppercase; letter-spacing: .05em; }
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+    }
+    .form-grid .full { grid-column: 1 / -1; }
+    label { font-size: 0.78rem; color: var(--muted); display: block; margin-bottom: 4px; }
+    input {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 0.55rem 0.75rem;
+      font-size: 0.92rem;
+      outline: none;
+      transition: border-color .2s;
+    }
+    input:focus { border-color: var(--accent); }
+    .btn {
+      width: 100%;
+      padding: 0.7rem;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity .2s, transform .1s;
+    }
+    .btn:active { transform: scale(.98); }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { opacity: .9; }
+    .btn-primary:disabled { opacity: .45; cursor: not-allowed; }
+    .btn-ghl { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; margin-top: 0.5rem; }
+
+    /* Status */
+    #status {
+      font-size: 0.9rem;
+      padding: 0.5rem 0;
+      color: var(--muted);
+      min-height: 1.4rem;
+      text-align: center;
+    }
+
+    /* Results */
+    #results { display: none; }
+    .score-banner {
+      border-radius: 10px;
+      padding: 1.2rem 1.5rem;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+    .score-banner.CRITICAL { background: rgba(239,68,68,.15);  border: 1px solid rgba(239,68,68,.4); }
+    .score-banner.WARM     { background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.4); }
+    .score-banner.OK       { background: rgba(34,197,94,.1);   border: 1px solid rgba(34,197,94,.35); }
+    .score-banner.NO_DATA  { background: rgba(168,85,247,.1);  border: 1px solid rgba(168,85,247,.35); }
+    .score-label { font-size: 1.4rem; font-weight: 700; }
+    .score-meta  { font-size: 0.82rem; color: var(--muted); margin-top: 2px; }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+    .info-box {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+    }
+    .info-box .lbl { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+    .info-box .val { font-size: 0.95rem; font-weight: 600; margin-top: 3px; }
+
+    /* Permits table */
+    .permits-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      margin-bottom: 1rem;
+    }
+    .permits-card h3 {
+      padding: 0.85rem 1.2rem;
+      font-size: 0.88rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      border-bottom: 1px solid var(--border);
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+    th {
+      padding: 0.55rem 1rem;
+      text-align: left;
+      background: rgba(255,255,255,.03);
+      color: var(--muted);
+      font-weight: 500;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+    }
+    td { padding: 0.55rem 1rem; border-top: 1px solid var(--border); vertical-align: top; }
+    tr:hover td { background: rgba(255,255,255,.025); }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 20px;
+      font-size: 0.72rem;
+      font-weight: 600;
+    }
+    .badge-roof    { background: rgba(239,68,68,.2);  color: #f87171; }
+    .badge-ac      { background: rgba(99,102,241,.2); color: #818cf8; }
+    .badge-electric{ background: rgba(245,158,11,.2); color: #fcd34d; }
+    .badge-other   { background: rgba(148,163,184,.1);color: var(--muted); }
   </style>
 </head>
 <body>
-<div class="container">
-  <h1>🔧 PermitIQ</h1>
-  <p class="subtitle">Consulta de permisos de construcción en Florida</p>
+<header>
+  <div>
+    <div class="logo">âš¡ PermitIQ</div>
+    <div class="sub">Miami-Dade &amp; Broward â€” Property Permit Intelligence</div>
+  </div>
+</header>
 
-  <div class="card">
-    <input id="addressInput" type="text" placeholder="Ej: 14930 NE 14 AVE, Miami, FL"/>
-    <button class="btn-search" id="searchBtn" onclick="search()">🔍 BUSCAR PERMISOS</button>
+<main>
+  <div class="search-card">
+    <h2>BÃºsqueda de Propiedad</h2>
+    <div class="form-grid">
+      <div class="full">
+        <label>DirecciÃ³n *</label>
+        <input id="address" placeholder="123 Main St" />
+      </div>
+      <div>
+        <label>Ciudad</label>
+        <input id="city" placeholder="Miami" />
+      </div>
+      <div>
+        <label>ZIP Code</label>
+        <input id="zip" placeholder="33101" maxlength="5" />
+      </div>
+      <div>
+        <label>Folio (opcional)</label>
+        <input id="folio" placeholder="3022200020740" />
+      </div>
+      <div>
+        <label>GHL Contact ID (opcional)</label>
+        <input id="contactId" placeholder="Rj8xKm..." />
+      </div>
+    </div>
+    <br />
+    <button class="btn btn-primary" id="searchBtn" onclick="runSearch()">ðŸ” Buscar Permisos</button>
   </div>
 
-  <div id="resultCard" class="card hidden"></div>
-</div>
+  <div id="status"></div>
+  <div id="results"></div>
+</main>
 
 <script>
-let lastData = null;
+let lastResult = null;
 
-async function search() {
-  const address = document.getElementById('addressInput').value.trim();
-  if (!address) return;
-  const btn = document.getElementById('searchBtn');
-  const card = document.getElementById('resultCard');
+function setStatus(msg, color) {
+  const el = document.getElementById(''status'');
+  el.textContent = msg;
+  el.style.color = color || ''var(--muted)'';
+}
+
+async function runSearch() {
+  const address   = document.getElementById(''address'').value.trim();
+  const city      = document.getElementById(''city'').value.trim();
+  const zip       = document.getElementById(''zip'').value.trim();
+  const folio     = document.getElementById(''folio'').value.trim();
+  const contactId = document.getElementById(''contactId'').value.trim();
+
+  if (!address && !folio) { setStatus(''âš ï¸ Ingresa una direcciÃ³n o folio.'', ''#f59e0b''); return; }
+
+  const btn = document.getElementById(''searchBtn'');
   btn.disabled = true;
-  btn.textContent = '⏳ Buscando...';
-  card.className = 'card';
-  card.innerHTML = '<div style="text-align:center;padding:20px;color:#666">Consultando permisos...</div>';
+  setStatus(''â³ Consultando...'');
+  document.getElementById(''results'').style.display = ''none'';
 
   try {
-    const res = await fetch('/api/search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ address })
+    const res = await fetch(''/api/search'', {
+      method: ''POST'',
+      headers: { ''Content-Type'': ''application/json'' },
+      body: JSON.stringify({ address, city, zip, folio, contactId }),
     });
-    const json = await res.json();
-    lastData = json.data;
-    renderResult(json.data, address);
-  } catch(e) {
-    card.innerHTML = `<div style="color:#dc2626">❌ Error: ${e.message}</div>`;
+    const data = await res.json();
+    if (!res.ok) { setStatus(''âŒ '' + (data.error || ''Error desconocido''), ''#ef4444''); return; }
+    lastResult = data;
+    renderResults(data);
+    setStatus(data.ghlPushed ? ''âœ… Datos enviados a GoHighLevel'' : '''', ''#22c55e'');
+  } catch (e) {
+    setStatus(''âŒ Error de conexiÃ³n: '' + e.message, ''#ef4444'');
   } finally {
     btn.disabled = false;
-    btn.textContent = '🔍 BUSCAR PERMISOS';
   }
 }
 
-function fmt(val, prefix='', suffix='') {
-  if (val == null) return '<span style="color:#aaa">—</span>';
-  return prefix + val.toLocaleString() + suffix;
-}
+function fmt(v) { return v || ''â€”''; }
 
-function renderResult(d, address) {
-  const card = document.getElementById('resultCard');
-  const color = d.color || 'purple';
+function renderResults(d) {
+  const { property = {}, permits = [], roofScore = {}, summary = {} } = d;
+  const scoreClass = roofScore.score || ''NO_DATA'';
 
-  // Sección PA
-  const paHtml = `
-    <div class="section-title">👤 Propietario</div>
-    <div class="info-row"><span class="info-label">Nombre</span><span class="info-value">${d.ownerName || '—'}</span></div>
-    <div class="info-row"><span class="info-label">Homestead</span><span class="info-value ${d.homestead==='SI'?'homestead-yes':'homestead-no'}">${d.homestead==='SI'?'✅ SÍ — Dueño vive ahí':'❌ NO'}</span></div>
-    <div class="info-row"><span class="info-label">Municipio</span><span class="info-value">${d.municipality || '—'}</span></div>
-    <div class="info-row"><span class="info-label">Folio</span><span class="info-value">${d.folio || '—'}</span></div>
-    ${d.isAbsentee ? `<div class="info-row"><span class="info-label">Dirección postal</span><span class="info-value"><span class="absentee-badge">📬 ABSENTEE</span> ${d.mailingAddress}</span></div>` : ''}
+  let html = `
+  <div class="score-banner ${scoreClass}">
+    <div>
+      <div class="score-label">${roofScore.label || ''ðŸŸ£ SIN DATA''}</div>
+      <div class="score-meta">
+        ${roofScore.age !== null ? `Techo: hace ${roofScore.age} aÃ±os` : ''Sin permisos de techo''}
+        ${roofScore.date ? ` Â· ${roofScore.date}` : ''''}
+        ${roofScore.contractor ? ` Â· ${roofScore.contractor}` : ''''}
+      </div>
+    </div>
+    <div style="text-align:right;font-size:0.8rem;color:var(--muted)">
+      ${summary.county?.toUpperCase() || ''''}<br>
+      ${summary.municipality || ''''}
+    </div>
+  </div>
 
-    <div class="section-title">🏠 Propiedad</div>
-    <div class="info-row"><span class="info-label">Año construcción</span><span class="info-value">${fmt(d.yearBuilt)}</span></div>
-    <div class="info-row"><span class="info-label">Tamaño</span><span class="info-value">${fmt(d.sqft, '', ' sq ft')}</span></div>
-    <div class="info-row"><span class="info-label">Lote</span><span class="info-value">${fmt(d.lotSize, '', ' sq ft')}</span></div>
-    <div class="info-row"><span class="info-label">Cuartos / Baños</span><span class="info-value">${d.bedrooms||'—'} / ${d.bathrooms||'—'}</span></div>
-    <div class="info-row"><span class="info-label">Valor tasado</span><span class="info-value">${fmt(d.totalValue, '$')}</span></div>
+  <div class="info-grid">
+    <div class="info-box"><div class="lbl">DueÃ±o</div><div class="val">${fmt(property.ownerName)}</div></div>
+    <div class="info-box"><div class="lbl">AÃ±o Construido</div><div class="val">${fmt(property.yearBuilt)}</div></div>
+    <div class="info-box"><div class="lbl">Ãrea (sqft)</div><div class="val">${property.sqft ? Number(property.sqft).toLocaleString() : ''â€”''}</div></div>
+    <div class="info-box"><div class="lbl">Valor Tasado</div><div class="val">${property.assessedValue ? ''$'' + Number(property.assessedValue).toLocaleString() : ''â€”''}</div></div>
+    <div class="info-box"><div class="lbl">Homestead</div><div class="val">${property.homestead ? ''âœ… SÃ­'' : ''âŒ No''}</div></div>
+    <div class="info-box"><div class="lbl">Folio</div><div class="val" style="font-size:.78rem">${fmt(property.folio)}</div></div>
+    <div class="info-box" style="grid-column: 1/-1"><div class="lbl">DirecciÃ³n Postal DueÃ±o</div><div class="val" style="font-size:.83rem">${fmt(property.ownerMailing)}</div></div>
+  </div>
   `;
 
-  // Sección permisos categorizados
-  const permSection = (label, perm, tagClass) => {
-    if (!perm) return `<div class="info-row"><span class="info-label">${label}</span><span class="info-value" style="color:#aaa">Sin datos</span></div>`;
-    return `<div class="info-row"><span class="info-label">${label}</span><span class="info-value">${perm.date} · ${perm.contractor||'—'}</span></div>`;
-  };
-
-  const permHtml = `
-    <div class="section-title">🔨 Permisos Recientes</div>
-    ${permSection('🏠 Techo', d.roofPermit, 'tag-roof')}
-    ${permSection('⚡ Eléctrico', d.elecPermit, 'tag-electric')}
-    ${permSection('❄️ A/C', d.acPermit, 'tag-ac')}
-  `;
-
-  // Lista detallada
-  let listHtml = '';
-  if (d.allPermits && d.allPermits.length > 0) {
-    const tagMap = { ROOF: 'tag-roof', ELECTRIC: 'tag-electric', AC: 'tag-ac', OTHER: '' };
-    const borderMap = { ROOF: 'roof', ELECTRIC: 'electric', AC: 'ac', OTHER: '' };
-    listHtml = `
-      <div class="section-title">📋 Todos los permisos (${d.allPermits.length})</div>
-      ${d.allPermits.map(p => `
-        <div class="permit-row ${borderMap[p.category]||''}">
-          <div class="permit-desc">
-            ${p.description || p.type}
-            ${p.category !== 'OTHER' ? `<span class="tag ${tagMap[p.category]}">${p.category}</span>` : ''}
-            <span class="tag ${p.status==='F'?'tag-F':'tag-E'}">${p.status==='F'?'Finalizado':'Expirado'}</span>
-          </div>
-          <div class="permit-meta">${p.date} · ${p.contractor||'—'} · #${p.permitNo||'—'}</div>
-        </div>
-      `).join('')}
-    `;
+  if (permits.length === 0) {
+    html += `<div style="text-align:center;padding:2rem;color:var(--muted);font-size:.9rem">
+      Sin permisos encontrados Â· ${summary.querySource || ''''}
+    </div>`;
+  } else {
+    html += `
+    <div class="permits-card">
+      <h3>Permisos (${permits.length}) Â· ${summary.querySource || ''''}</h3>
+      <table>
+        <thead><tr>
+          <th>Tipo</th><th>DescripciÃ³n</th><th>Fecha</th><th>Estado</th><th>Contratista</th>
+        </tr></thead>
+        <tbody>
+          ${permits.map(p => {
+            const cat = p._category || ''other'';
+            const badgeClass = `badge badge-${cat}`;
+            const catLabel = cat === ''roof'' ? ''ðŸ  TECHO'' : cat === ''ac'' ? ''â„ï¸ A/C'' : cat === ''electric'' ? ''âš¡ ELÃ‰C'' : ''OTRO'';
+            return `<tr>
+              <td><span class="${badgeClass}">${catLabel}</span><br><span style="font-size:.75rem;color:var(--muted)">${fmt(p.type)}</span></td>
+              <td style="max-width:240px;font-size:.8rem">${fmt(p.description)}</td>
+              <td style="white-space:nowrap">${fmt(p.date)}</td>
+              <td style="font-size:.78rem">${fmt(p.status)}</td>
+              <td style="font-size:.78rem">${fmt(p.contractor)}</td>
+            </tr>`;
+          }).join('''')}
+        </tbody>
+      </table>
+    </div>`;
   }
 
-  card.innerHTML = `
-    <span class="badge ${color}">${d.label}</span>
-    <div class="info-row">
-      <span class="info-label">📍 Dirección</span>
-      <span class="info-value">${address}</span>
-    </div>
-    <div class="info-row">
-      <span class="info-label">🗺️ Condado</span>
-      <span class="info-value">${d.county}</span>
-    </div>
-    <div class="info-row">
-      <span class="info-label">🏠 Edad del techo</span>
-      <span class="info-value">${d.roofAge != null ? d.roofAge + ' años' : 'Desconocida'}</span>
-    </div>
-    <div class="info-row">
-      <span class="info-label">📅 Último permiso techo</span>
-      <span class="info-value">${d.latestRoofYear || 'Sin datos'}</span>
-    </div>
-    ${d.sourceNote ? `<p class="source-note">ℹ️ ${d.sourceNote}</p>` : ''}
-    ${paHtml}
-    ${permHtml}
-    ${listHtml}
-    <button class="btn-ghl" onclick="pushToGHL()">🚀 Agregar a GoHighLevel</button>
-    <div id="ghl-status"></div>
-  `;
+  const resultsEl = document.getElementById(''results'');
+  resultsEl.innerHTML = html;
+  resultsEl.style.display = ''block'';
 }
 
-async function pushToGHL() {
-  if (!lastData) return;
-  const btn = document.querySelector('.btn-ghl');
-  const status = document.getElementById('ghl-status');
-  btn.disabled = true;
-  btn.textContent = '⏳ Enviando a GHL...';
-  try {
-    const res = await fetch('/api/ghl-push', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        address:   lastData.address,
-        ghlFields: lastData.ghlFields,
-        ownerName: lastData.ownerName,
-      })
-    });
-    const json = await res.json();
-    if (json.success) {
-      status.innerHTML = '<div class="ghl-success">✅ Datos enviados a GoHighLevel correctamente</div>';
-      btn.textContent = '✅ Enviado a GHL';
-    } else {
-      throw new Error(json.error || 'Error desconocido');
-    }
-  } catch(e) {
-    status.innerHTML = `<div class="ghl-error">❌ Error: ${e.message}</div>`;
-    btn.disabled = false;
-    btn.textContent = '🚀 Agregar a GoHighLevel';
-  }
-}
-
-document.getElementById('addressInput').addEventListener('keypress', e => {
-  if (e.key === 'Enter') search();
+// Allow Enter key
+document.addEventListener(''keydown'', e => {
+  if (e.key === ''Enter'') runSearch();
 });
 </script>
 </body>
 </html>
+
