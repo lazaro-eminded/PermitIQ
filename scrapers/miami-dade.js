@@ -6,61 +6,109 @@ const { resolve } = require('../utils/jurisdictions');
 
 const PA_BASE = 'https://apps.miamidadepa.gov/PApublicServiceProxy/PaServicesProxy.ashx';
 
-// PA stores streets WITHOUT ordinal suffixes: "97 AVE" not "97th AVE"
-function stripOrdinals(s) {
-  return s.replace(/(\d+)(st|nd|rd|th)\b/gi, '$1');
+// ── Address utilities ────────────────────────────────────────────────────────
+
+function normalizeAddr(s) {
+  return String(s).toUpperCase()
+    .replace(/\b(STREET|STR)\b/g, 'ST')
+    .replace(/\bAVENUE\b/g, 'AVE')
+    .replace(/\bBOULEVARD\b/g, 'BLVD')
+    .replace(/\bDRIVE\b/g, 'DR')
+    .replace(/\bROAD\b/g, 'RD')
+    .replace(/\bCOURT\b/g, 'CT')
+    .replace(/\bTERRACE\b/g, 'TER')
+    .replace(/\bPLACE\b/g, 'PL')
+    .replace(/\bLANE\b/g, 'LN')
+    .replace(/(\d+)(ST|ND|RD|TH)\b/g, '$1')
+    .replace(/[.,]/g, '')
+    .replace(/\s+/g, ' ').trim();
 }
 
-// Keep only the street portion for PA search
+function houseNum(s) {
+  const m = String(s).match(/^(\d+)/);
+  return m ? m[1] : '';
+}
+
+// Pick the hit whose address best matches what was searched.
+// Returns null if no hit has a matching house number.
+function bestMatch(hits, searched) {
+  const sNorm  = normalizeAddr(searched);
+  const sNum   = houseNum(searched.trim());
+  const sWords = sNorm.split(' ').filter(w => w.length > 1 && !/^\d+$/.test(w));
+
+  const scored = hits.map(hit => {
+    const raw   = hit.Address || hit.SiteAddress || hit.address || hit.StreetAddress || '';
+    const hNorm = normalizeAddr(raw);
+    const hNum  = houseNum(raw.trim());
+    const hSet  = new Set(hNorm.split(' '));
+    let score   = 0;
+    if (sNum && hNum === sNum) score += 100;
+    else if (sNum)             score -= 500;
+    for (const w of sWords) if (hSet.has(w)) score += 20;
+    return { hit, score, matched: raw };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+  if (scored[0]?.score >= 100) return scored[0].hit;
+  return null;
+}
+
+// Strip city/state/zip — keep only street for PA search
 function toStreetOnly(address) {
-  let s = address
+  return address
     .replace(/,\s*(miami[\w\s]*|hialeah|coral gables|homestead|doral|aventura|kendall|cutler bay|palmetto bay|pinecrest|surfside|sweetwater|medley|opa.?locka|florida city|key biscayne|north miami[\w\s]*|south miami|west miami).*/i, '')
     .replace(/,?\s*(fl|florida)\s*\d{5}(-\d{4})?/i, '')
     .replace(/,\s*\d{5}(-\d{4})?$/, '')
+    .replace(/(\d+)(st|nd|rd|th)\b/gi, '$1')
     .trim();
-  return stripOrdinals(s);
 }
 
 async function paSearch(query) {
   const url = `${PA_BASE}?Operation=GetAddress&clientAppName=PropertySearch&myUnit=&from=1&to=200&myAddress=${encodeURIComponent(query)}`;
-  const res  = await fetch(url, { headers: { 'User-Agent': 'PermitIQ/1.0' } });
+  const res = await fetch(url, { headers: { 'User-Agent': 'PermitIQ/1.0' } });
   if (!res.ok) return [];
   const data = await res.json();
   return data.MinimumPropertyInfos || data.Hits || data.Results || (Array.isArray(data) ? data : []);
 }
 
 async function searchAddress(address) {
-  // Attempt 1: clean street only, ordinals stripped
   const street = toStreetOnly(address);
+
+  // Attempt 1: exact cleaned street (e.g. "11900 SW 97 Ave")
   console.log('[PA] attempt 1:', street);
   let hits = await paSearch(street);
-  if (hits.length) return hits;
+  let match = bestMatch(hits, address);
+  if (match) return match;
 
-  // Attempt 2: just number + direction + street name (no suffix)
-  // e.g. "11900 SW 97 Ave" -> "11900 SW 97"
-  const parts = street.split(' ');
-  const short = parts.slice(0, 3).join(' ');
-  if (short !== street) {
-    console.log('[PA] attempt 2:', short);
-    hits = await paSearch(short);
-    if (hits.length) return hits;
+  // Attempt 2: uppercase (PA may be case-sensitive)
+  const upper = street.toUpperCase();
+  if (upper !== street) {
+    console.log('[PA] attempt 2 uppercase:', upper);
+    hits = await paSearch(upper);
+    match = bestMatch(hits, address);
+    if (match) return match;
   }
 
-  // Attempt 3: just number + street word
-  const shorter = parts.slice(0, 2).join(' ');
-  if (shorter !== short) {
-    console.log('[PA] attempt 3:', shorter);
-    hits = await paSearch(shorter);
-    if (hits.length) return hits;
+  // Attempt 3: abbreviate Ave/St/Blvd to bare number+direction+number
+  // e.g. "11900 SW 97 Ave" -> "11900 SW 97"  (only if street name is a number)
+  const parts = street.toUpperCase().split(' ');
+  if (parts.length >= 3 && /^\d+$/.test(parts[2])) {
+    const num3 = parts.slice(0, 3).join(' ');
+    console.log('[PA] attempt 3 numeric street:', num3);
+    hits = await paSearch(num3);
+    match = bestMatch(hits, address);
+    if (match) return match;
   }
 
-  return [];
+  return null;
 }
+
+// ── PA folio lookup ──────────────────────────────────────────────────────────
 
 async function getPropertyByFolio(folio) {
   const f   = String(folio).replace(/\D/g, '');
   const url = `${PA_BASE}?Operation=GetPropertySearchByFolio&clientAppName=PropertySearch&folioNumber=${f}`;
-  const res  = await fetch(url, { headers: { 'User-Agent': 'PermitIQ/1.0' } });
+  const res = await fetch(url, { headers: { 'User-Agent': 'PermitIQ/1.0' } });
   if (!res.ok) throw new Error(`PA folio lookup failed: ${res.status}`);
   return await res.json();
 }
@@ -71,7 +119,7 @@ function pick(...vals) {
 }
 
 function parseProperty(data) {
-  console.log('[PA Raw]', JSON.stringify(data).substring(0, 400));
+  console.log('[PA topKeys]', Object.keys(data || {}).join(', '));
 
   const info   = data?.PropertyInfo   || data?.propertyInfo  || data?.Property || {};
   const owners = data?.OwnerInfos     || data?.ownerInfos    || data?.Owners   || [];
@@ -111,17 +159,18 @@ function parseProperty(data) {
   return { folio, ownerName, municipality, yearBuilt, sqft, assessedValue, homestead, ownerMailing: mailingParts.join(', '), address };
 }
 
-// County ArcGIS (rolling 3 years)
+// ── Permit sources ────────────────────────────────────────────────────────────
+
 const COUNTY_ARCGIS = 'https://gisweb.miamidade.gov/arcgis/rest/services/MD_LandInformation/MapServer/1/query';
 
 async function getCountyPermits(folio) {
   const f      = String(folio).replace(/\D/g, '');
   const params = new URLSearchParams({
-    where: `FOLIO='${f}'`,
-    outFields: 'ADDRESS,FOLIO,TYPE,CAT1,DESC1,ISSUDATE,BPSTATUS,CONTRNAME,PROCNUM',
-    orderByFields: 'ISSUDATE DESC',
+    where:             `FOLIO='${f}'`,
+    outFields:         'ADDRESS,FOLIO,TYPE,CAT1,DESC1,ISSUDATE,BPSTATUS,CONTRNAME,PROCNUM',
+    orderByFields:     'ISSUDATE DESC',
     resultRecordCount: '200',
-    f: 'json',
+    f:                 'json',
   });
   const res  = await fetch(`${COUNTY_ARCGIS}?${params}`, { headers: { 'User-Agent': 'PermitIQ/1.0' } });
   if (!res.ok) return [];
@@ -140,17 +189,16 @@ async function getCountyPermits(folio) {
   });
 }
 
-// City of Miami FeatureServer (2014-present)
 const MIAMI_CITY_URL = 'https://services1.arcgis.com/CvuPhqcTQpZPT9qY/arcgis/rest/services/Building_Permits_Since_2014/FeatureServer/0/query';
 
 async function getCityOfMiamiPermits(folio) {
   const folioInt = parseInt(String(folio).replace(/\D/g, ''), 10);
   const params   = new URLSearchParams({
-    where: `FolioNumber=${folioInt}`,
-    outFields: 'FolioNumber,DeliveryAddress,PermitNumber,IssuedDate,ScopeofWork,WorkItems,CompanyName,BuildingPermitStatusDescription',
-    orderByFields: 'IssuedDate DESC',
+    where:             `FolioNumber=${folioInt}`,
+    outFields:         'FolioNumber,DeliveryAddress,PermitNumber,IssuedDate,ScopeofWork,WorkItems,CompanyName,BuildingPermitStatusDescription',
+    orderByFields:     'IssuedDate DESC',
     resultRecordCount: '200',
-    f: 'json',
+    f:                 'json',
   });
   const res  = await fetch(`${MIAMI_CITY_URL}?${params}`, { headers: { 'User-Agent': 'PermitIQ/1.0' } });
   if (!res.ok) return [];
@@ -168,6 +216,8 @@ async function getCityOfMiamiPermits(folio) {
     };
   });
 }
+
+// ── Categorization & scoring ─────────────────────────────────────────────────
 
 const ROOF_KW = /\b(roof|roofing|reroof|re-roof|shingle|tile roof|flat roof|metal roof)\b/i;
 const AC_KW   = /\b(a\/c|ac|air.cond|hvac|mechanical|heat pump|mini.split|condenser)\b/i;
@@ -191,7 +241,7 @@ function yearsSince(dateStr) {
 function scoreRoof(permits) {
   const rp = permits.filter(p => p._category === 'roof');
   if (!rp.length) return { score: 'NO_DATA', label: 'SIN DATA', age: null, date: '', contractor: '', permitNumber: '' };
-  const l = rp[0];
+  const l   = rp[0];
   const age = yearsSince(l.date);
   let score, label;
   if (age === null)   { score = 'NO_DATA';  label = 'SIN DATA'; }
@@ -201,18 +251,22 @@ function scoreRoof(permits) {
   return { score, label, age, date: l.date, contractor: l.contractor, permitNumber: l.permitNumber };
 }
 
+// ── Main ──────────────────────────────────────────────────────────────────────
+
 async function scrapeMiamiDade({ address, folio: folioInput }) {
   let folio    = folioInput || null;
   let property = {};
 
   if (!folio) {
-    const hits = await searchAddress(address);
-    if (!hits.length) throw new Error('Direccion no encontrada en PA Miami-Dade');
+    const hit = await searchAddress(address);
+    if (!hit) throw new Error('Direccion no encontrada en PA Miami-Dade');
     folio = String(
-      hits[0].FolioNumber || hits[0].folioNumber || hits[0].Folio || hits[0].folio || ''
+      hit.FolioNumber || hit.folioNumber || hit.Folio || hit.folio || ''
     ).replace(/\D/g, '');
-    console.log('[PA] folio found:', folio);
+    console.log('[PA] matched folio:', folio, '| address in PA:', hit.Address || hit.SiteAddress || '');
   }
+
+  if (!folio) throw new Error('No se pudo obtener el folio para esta direccion');
 
   const paData = await getPropertyByFolio(folio);
   property = parseProperty(paData);
